@@ -2,20 +2,13 @@
 
 import React, { Suspense, useCallback, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
-import { useWalletModal } from '@solana/wallet-adapter-react-ui';
 import { PublicKey, Transaction } from '@solana/web3.js';
 import { getPrice, PLAN_CONFIGS } from '@/lib/pricingConfig';
+import { useAuth } from '@/lib/auth/AuthContext';
 import { associatedTokenAddress, buildUsdcTransferInstructions, parseTransferRequestUrl } from '@/lib/payments/transferTx';
-import {
-  AlertTriangle,
-  CheckCircle2,
-  Copy,
-  ExternalLink,
-  Loader2,
-  ShieldCheck,
-  Wallet,
-} from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Copy, ExternalLink, Loader2, Wallet } from 'lucide-react';
 
 interface PurchaseInfo {
   id: string;
@@ -38,15 +31,16 @@ function CheckoutContent() {
   const config = PLAN_CONFIGS[plan];
   const price = getPrice(size, plan);
 
+  // A1: покупка создаётся только после входа; до входа — нейтральный шаг, без ошибок.
+  const { user, signIn, signingIn } = useAuth();
+  const { connected, publicKey, sendTransaction } = useWallet();
+  const { connection } = useConnection();
+
+  const [agreed, setAgreed] = useState(false);
   const [purchase, setPurchase] = useState<PurchaseInfo | null>(null);
   const [status, setStatus] = useState<CheckoutStatus>('LOADING');
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-
-  const { publicKey, connected, sendTransaction } = useWallet();
-  const { connection } = useConnection();
-  const { setVisible } = useWalletModal();
-
   const [sending, setSending] = useState(false);
   const [payError, setPayError] = useState<string | null>(null);
   const [txSignature, setTxSignature] = useState<string | null>(null);
@@ -67,8 +61,9 @@ function CheckoutContent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ accountSize: size, planType: plan }),
       });
+      // Сессия могла истечь между входом и оплатой — возвращаем к шагу входа.
       if (res.status === 401) {
-        setError('Sign in with your Solana wallet to purchase a challenge.');
+        setError('Your session expired — sign in again to continue.');
         return;
       }
       if (!res.ok) throw new Error('Failed to create payment request');
@@ -80,9 +75,16 @@ function CheckoutContent() {
     }
   }, [size, plan]);
 
+  // Покупка создаётся только для вошедшего пользователя (A1).
   useEffect(() => {
+    if (!user) {
+      setPurchase(null);
+      setStatus('LOADING');
+      setError(null);
+      return;
+    }
     void createPurchase();
-  }, [createPurchase]);
+  }, [user, createPurchase]);
 
   // Оплата подключённым кошельком: баланс → инструкции из transferTx → отправка адаптером →
   // confirmTransaction('confirmed'). Статус покупки дальше продолжает опрашивать эффект поллинга.
@@ -125,6 +127,7 @@ function CheckoutContent() {
       try {
         const res = await fetch(`/api/checkout/status?id=${encodeURIComponent(purchase.id)}`);
         if (!res.ok) return;
+        // rulesHash в ответе статуса API отсутствует — блок хэша правил не показываем.
         const data: { status: string; accountId: string | null } = await res.json();
         if (data.status === 'PAID') {
           if (data.accountId) localStorage.setItem('activeAccountId', data.accountId);
@@ -156,181 +159,195 @@ function CheckoutContent() {
     }
   };
 
+  const usd = (n: number) => `$${n.toLocaleString('en-US')}`;
+
   return (
-    <div className="max-w-3xl mx-auto px-4 py-16 font-mono">
-      <div className="glass-panel p-8 rounded-2xl border border-surface-border">
-        <h1 className="text-2xl font-bold text-white mb-2 flex items-center gap-2">
-          <ShieldCheck className="w-6 h-6 text-profit" /> Challenge Checkout
-        </h1>
-        <p className="text-xs text-gray-400 font-sans mb-8">
-          Review your evaluation parameters and pay in USDC via Solana Pay.
-        </p>
+    <div className="site-container checkout-page">
+      <span className="eyebrow">CHECKOUT / {plan} EVALUATION</span>
+      <h1>Review your challenge.</h1>
+      <p className="checkout-lede">
+        {usd(size)} evaluation capital · one-time fee in USDC · simulated execution on real market prices.
+      </p>
 
-        {/* Order Summary */}
-        <div className="bg-[#101015] p-6 rounded-xl border border-surface-border space-y-4 font-mono text-sm mb-6">
-          <div className="flex justify-between items-center border-b border-surface-border/60 pb-3">
-            <span className="text-gray-400">ACCOUNT SIZE</span>
-            <span className="text-lg font-bold text-white">${size.toLocaleString()}</span>
+      <div className="checkout-grid">
+        {/* T3: полная сводка правил плана до оплаты */}
+        <section className="checkout-panel" aria-label="Order summary">
+          <div className="summary-row">
+            <span>Account size</span>
+            <b>{usd(size)}</b>
           </div>
-
-          <div className="flex justify-between items-center border-b border-surface-border/60 pb-3">
-            <span className="text-gray-400">EVALUATION PLAN</span>
-            <span className="text-profit font-bold">{plan}</span>
+          <div className="summary-row">
+            <span>Plan</span>
+            <b>{plan.charAt(0) + plan.slice(1).toLowerCase()}</b>
           </div>
-
-          <div className="flex justify-between items-center border-b border-surface-border/60 pb-3">
-            <span className="text-gray-400">PROFIT TARGET</span>
-            <span className="text-white">{config.profitTargetPct}% (${(size * (config.profitTargetPct / 100)).toLocaleString()})</span>
+          <div className="summary-row">
+            <span>Profit target</span>
+            <b>{config.profitTargetPct}% · {usd(size * config.profitTargetPct / 100)}</b>
           </div>
-
-          <div className="flex justify-between items-center border-b border-surface-border/60 pb-3">
-            <span className="text-gray-400">STATIC MAX DRAWDOWN FLOOR</span>
-            <span className="text-white">${(size * (1 - config.maxDdPct / 100)).toLocaleString()} ({config.maxDdPct}%)</span>
+          <div className="summary-row">
+            <span>Max daily loss</span>
+            <b>{config.dailyDdPct}% of day-start equity · resets 00:00 UTC</b>
           </div>
-
-          <div className="flex justify-between items-center border-b border-surface-border/60 pb-3">
-            <span className="text-gray-400">DAILY DRAWDOWN LIMIT</span>
-            <span className="text-white">3% (00:00 UTC Reset)</span>
+          <div className="summary-row">
+            <span>Static max loss</span>
+            <b>{config.maxDdPct}% · floor at {usd(size * (1 - config.maxDdPct / 100))}</b>
           </div>
-
-          <div className="flex justify-between items-center pt-2">
-            <span className="text-base font-bold text-gray-200">TOTAL DUE</span>
-            <span className="text-2xl font-extrabold text-profit">${price} USDC</span>
+          <div className="summary-row">
+            <span>Minimum trading days</span>
+            <b>{config.minTradingDays} days</b>
           </div>
-        </div>
-
-        {/* Payment flow */}
-        {error && (
-          <div className="bg-red-950/40 border border-red-800/60 p-5 rounded-xl flex flex-col gap-3 items-start">
-            <div className="flex items-center gap-2 text-red-300 text-sm">
-              <AlertTriangle className="w-4 h-4" /> {error}
-            </div>
-            <button
-              onClick={() => void createPurchase()}
-              className="px-4 py-2 rounded-lg border border-red-700 text-red-200 text-xs hover:bg-red-900/40 transition-colors"
-            >
-              Try again
-            </button>
+          <div className="summary-row">
+            <span>Profit split on funded</span>
+            <b>{config.profitSplitPct}%</b>
           </div>
-        )}
-
-        {status === 'LOADING' && !error && (
-          <div className="flex items-center justify-center gap-3 text-gray-400 text-sm py-8">
-            <Loader2 className="w-5 h-5 animate-spin text-profit" />
-            <span>Creating payment request…</span>
+          <div className="summary-row">
+            <span>Leverage</span>
+            <b>Up to 5x</b>
           </div>
-        )}
+          <div className="summary-row checkout-total">
+            <span>Total due</span>
+            <b>${price} USDC</b>
+          </div>
+          <p className="rules-note">
+            Breaching either drawdown floor ends the challenge automatically.{' '}
+            <Link href="/rules">Read the full challenge rules</Link> before you pay.
+          </p>
+          {/* T3: обязательное согласие перед оплатой */}
+          <label className="agree-row">
+            <input
+              type="checkbox"
+              checked={agreed}
+              onChange={(e) => setAgreed(e.target.checked)}
+            />
+            <span>
+              I agree to the <Link href="/terms">Terms</Link>, <Link href="/refunds">Refund policy</Link> and{' '}
+              <Link href="/rules">Challenge rules</Link>.
+            </span>
+          </label>
+        </section>
 
-        {purchase && status === 'PENDING' && (
-          <div className="bg-[#101015] p-6 rounded-xl border border-surface-border space-y-5">
-            <div className="flex justify-between items-center font-mono text-sm">
-              <span className="text-gray-400">AMOUNT DUE</span>
-              <span className="text-xl font-extrabold text-profit">${purchase.amount} USDC</span>
-            </div>
-
-            <p className="text-[11px] text-gray-500 font-sans leading-relaxed">
-              Pay with your connected wallet below, or open the payment link in a Solana
-              wallet with USDC. The request specifies the treasury address, exact amount and
-              a unique reference key — the challenge account is activated automatically once
-              the transfer is confirmed on-chain.
-            </p>
-
-            {/* Основной путь: кошелёк сам подписывает и отправляет транзакцию. */}
-            {connected && publicKey ? (
+        <section className="checkout-panel" aria-label="Payment">
+          {/* A1: нейтральный шаг входа — никаких ошибок до попытки */}
+          {user === null && (
+            <div className="pay-step">
+              <h2>Sign in to pay</h2>
+              <p>
+                Connect your Solana wallet and sign a message to continue. The payment request is
+                created only after you sign in — nothing is charged on this step.
+              </p>
               <button
-                onClick={() => void payWithWallet()}
-                disabled={sending}
-                className="w-full py-4 bg-gradient-to-r from-brand-600 via-profit to-brand-500 hover:opacity-90 text-black font-extrabold rounded-xl text-base transition-all flex items-center justify-center space-x-2 shadow-lg shadow-brand-500/20 disabled:opacity-60 disabled:pointer-events-none"
+                className="button-primary"
+                onClick={() => void signIn()}
+                disabled={signingIn || !agreed}
               >
-                {sending ? (
-                  <>
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                    <span>Sending transaction…</span>
-                  </>
-                ) : (
-                  <>
-                    <Wallet className="w-5 h-5" />
-                    <span>Pay ${purchase.amount} USDC with {shortAddress}</span>
-                  </>
-                )}
+                <Wallet size={17} />
+                {signingIn ? 'Check your wallet…' : connected ? 'Sign in to pay' : 'Connect wallet and sign in'}
               </button>
-            ) : (
-              <button
-                onClick={() => setVisible(true)}
-                className="w-full py-4 bg-gradient-to-r from-brand-600 via-profit to-brand-500 hover:opacity-90 text-black font-extrabold rounded-xl text-base transition-all flex items-center justify-center space-x-2 shadow-lg shadow-brand-500/20"
-              >
-                <Wallet className="w-5 h-5" />
-                <span>Connect wallet</span>
+              {!agreed && <small className="pay-hint">Check the agreement box to continue.</small>}
+            </div>
+          )}
+
+          {user === undefined && (
+            <div className="pay-step">
+              <p className="pay-waiting"><Loader2 className="w-4 h-4 animate-spin" /> Checking your session…</p>
+            </div>
+          )}
+
+          {user && error && (
+            <div className="pay-step">
+              <p className="pay-error"><AlertTriangle size={15} /> {error}</p>
+              <button className="button-secondary" onClick={() => void signIn()}>
+                Sign in again
               </button>
-            )}
+            </div>
+          )}
 
-            {payError && (
-              <div className="flex items-center gap-2 text-red-300 text-sm">
-                <AlertTriangle className="w-4 h-4 shrink-0" /> {payError}
-              </div>
-            )}
+          {user && !error && status === 'LOADING' && (
+            <div className="pay-step">
+              <p className="pay-waiting"><Loader2 className="w-4 h-4 animate-spin" /> Creating your payment request…</p>
+            </div>
+          )}
 
-            {txSignature && (
+          {user && purchase && status === 'PENDING' && (
+            <div className="pay-step">
+              <h2>Pay {purchase.amount} USDC</h2>
+              <p>
+                The request specifies the treasury address, exact amount and a unique reference key —
+                the challenge account is activated automatically once the transfer is confirmed on-chain.
+              </p>
+
+              {connected && publicKey ? (
+                <button
+                  className="button-primary"
+                  onClick={() => void payWithWallet()}
+                  disabled={sending || !agreed}
+                >
+                  {sending ? (
+                    <><Loader2 className="w-4 h-4 animate-spin" /> Sending transaction…</>
+                  ) : (
+                    <><Wallet size={17} /> Pay {purchase.amount} USDC with {shortAddress}</>
+                  )}
+                </button>
+              ) : (
+                <p className="pay-hint">
+                  Connect the wallet you signed in with to pay directly on this page.
+                </p>
+              )}
+
+              {payError && (
+                <p className="pay-error"><AlertTriangle size={15} /> {payError}</p>
+              )}
+
+              {txSignature && (
+                <a
+                  className="pay-tx"
+                  href={`https://explorer.solana.com/tx/${txSignature}${explorerCluster}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Sent: {txSignature.slice(0, 24)}… — view transaction on explorer
+                </a>
+              )}
+
+              {/* Запасной путь: QR-рендер без новой зависимости невозможен; ссылка solana:
+                  валидна по спецификации Solana Pay — мобильные кошельки открывают её напрямую. */}
               <a
-                href={`https://explorer.solana.com/tx/${txSignature}${explorerCluster}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs text-profit underline underline-offset-4 break-all"
+                href={purchase.url}
+                aria-disabled={!agreed}
+                onClick={(e) => { if (!agreed) e.preventDefault(); }}
+                className={`button-secondary ${!agreed ? 'is-disabled' : ''}`}
               >
-                Sent: {txSignature.slice(0, 24)}… — view transaction on explorer
+                <ExternalLink size={15} /> Pay from mobile wallet
               </a>
-            )}
 
-            {/* Запасной путь: QR-рендер без новой зависимости невозможен; ссылка solana:
-                валидна по спецификации Solana Pay — мобильные кошельки открывают её напрямую. */}
-            <a
-              href={purchase.url}
-              className="w-full py-3 rounded-xl border border-surface-border text-gray-300 text-sm hover:bg-white/5 transition-colors flex items-center justify-center gap-2"
-            >
-              <ExternalLink className="w-4 h-4" />
-              <span>Pay from mobile wallet</span>
-            </a>
+              <button className="button-secondary" onClick={() => void copyLink()}>
+                <Copy size={15} /> {copied ? 'Copied!' : 'Copy payment link'}
+              </button>
 
-            <button
-              onClick={() => void copyLink()}
-              className="w-full py-3 rounded-xl border border-surface-border text-gray-300 text-sm hover:bg-white/5 transition-colors flex items-center justify-center gap-2"
-            >
-              <Copy className="w-4 h-4" />
-              <span>{copied ? 'Copied!' : 'Copy payment link'}</span>
-            </button>
-
-            <div className="flex items-center gap-3 text-xs text-gray-500 pt-1">
-              <Loader2 className="w-4 h-4 animate-spin text-profit" />
-              <span>
+              <p className="pay-hint">
                 {txSignature
                   ? 'Transaction sent — waiting for on-chain confirmation…'
                   : <>Waiting for payment… reference {purchase.reference.slice(0, 8)}… (expires after 30 minutes)</>}
-              </span>
+              </p>
+              {!agreed && <small className="pay-hint">Check the agreement box to pay.</small>}
             </div>
-          </div>
-        )}
+          )}
 
-        {status === 'EXPIRED' && (
-          <div className="bg-amber-950/40 border border-amber-800/60 p-5 rounded-xl flex flex-col gap-3 items-start">
-            <div className="flex items-center gap-2 text-amber-300 text-sm">
-              <AlertTriangle className="w-4 h-4" />
-              <span>Payment request expired after 30 minutes. No funds were received.</span>
+          {user && status === 'EXPIRED' && (
+            <div className="pay-step">
+              <p className="pay-warn"><AlertTriangle size={15} /> Payment request expired after 30 minutes. No funds were received.</p>
+              <button className="button-secondary" onClick={() => void createPurchase()}>
+                Create new payment request
+              </button>
             </div>
-            <button
-              onClick={() => void createPurchase()}
-              className="px-4 py-2 rounded-lg border border-amber-700 text-amber-200 text-xs hover:bg-amber-900/40 transition-colors"
-            >
-              Create new payment request
-            </button>
-          </div>
-        )}
+          )}
 
-        {status === 'PAID' && (
-          <div className="bg-profit/10 border border-profit/40 p-5 rounded-xl flex items-center gap-3 text-sm">
-            <CheckCircle2 className="w-5 h-5 text-profit" />
-            <span className="text-profit font-bold">Payment confirmed — redirecting to your dashboard…</span>
-          </div>
-        )}
+          {status === 'PAID' && (
+            <div className="pay-step">
+              <p className="pay-ok"><CheckCircle2 size={16} /> Payment confirmed — redirecting to your dashboard…</p>
+            </div>
+          )}
+        </section>
       </div>
     </div>
   );
@@ -339,9 +356,10 @@ function CheckoutContent() {
 export default function CheckoutPage() {
   return (
     <Suspense fallback={
-      <div className="max-w-3xl mx-auto px-4 py-20 text-center font-mono text-gray-400">
-        <Loader2 className="w-8 h-8 animate-spin text-profit mx-auto mb-4" />
-        <span>Loading Checkout Parameters...</span>
+      <div className="site-container checkout-page">
+        <span className="eyebrow">CHECKOUT</span>
+        <h1>Review your challenge.</h1>
+        <p className="pay-waiting"><Loader2 className="w-4 h-4 animate-spin" /> Loading checkout…</p>
       </div>
     }>
       <CheckoutContent />
