@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: props
+          POSTGRES_PASSWORD: props
+          # Тесты требуют базу props_test (проверка в каждом *.test.ts).
+          POSTGRES_DB: props_test
+        ports:
+          - 54339:5432
+        options: >-
+          --health-cmd "pg_isready -U props"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://props:props@localhost:54339/props_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # npm 10 (в docker и на раннерах node 22) ставит вложенные peer-копии
+      # @types/react@19 из lockfile — они ломают next build (конфликт с
+      # @types/react@18). Локальный npm 11 их не ставит. Правильное лечение —
+      # overrides в package.json (см. отчёт агента J).
+      - run: >-
+          find node_modules -mindepth 2 -path '*/node_modules/@types/react'
+          -type d -exec rm -rf {} +
+      - run: npx prisma generate
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build

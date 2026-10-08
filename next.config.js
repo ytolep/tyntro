@@ -26,6 +26,7 @@ const securityHeaders = [
 ];
 
 module.exports = {
+  output: 'standalone', // Docker-образ (server.js)
   async headers() {
     return [{ source: '/:path*', headers: securityHeaders }];
   },

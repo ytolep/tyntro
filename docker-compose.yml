@@ -6,8 +6,9 @@ services:
       POSTGRES_USER: props
       POSTGRES_PASSWORD: props
       POSTGRES_DB: props
+    # DB_PORT: чтобы несколько checkout'ов не дрались за порт 54339.
     ports:
-      - "54339:5432"
+      - "${DB_PORT:-54339}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./docker/initdb:/docker-entrypoint-initdb.d:ro
@@ -16,6 +17,69 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  # Разовая подготовка БД: миграции + сид (челленджи, опц. ADMIN).
+  migrate:
+    build: .
+    restart: "no"
+    command:
+      - sh
+      - -c
+      - >-
+        ./node_modules/.bin/prisma migrate deploy &&
+        node --import tsx prisma/seed.ts
+    environment:
+      DATABASE_URL: postgresql://props:props@db:5432/props
+      ADMIN_WALLET: ${ADMIN_WALLET:-}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    build: .
+    restart: unless-stopped
+    command: ["node", "server.js"]
+    environment:
+      DATABASE_URL: postgresql://props:props@db:5432/props
+      TREASURY_WALLET: ${TREASURY_WALLET:-}
+      SOLANA_RPC_URL: ${SOLANA_RPC_URL:-}
+      USDC_MINT: ${USDC_MINT:-}
+      # Дефолт задан явно: пустая строка крашит воркер на старте
+      # (riskTick.ts:21 читает env через ??, см. отчёт агента J).
+      TAKER_FEE_RATE: ${TAKER_FEE_RATE:-0.0005}
+    ports:
+      - "3000:3000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - >-
+          fetch('http://127.0.0.1:3000/api/health')
+          .then(r => process.exit(r.status === 200 ? 0 : 1))
+          .catch(() => process.exit(1))
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  worker:
+    build: .
+    restart: unless-stopped
+    # Аналог `npx tsx src/worker/index.ts` без npx-прослойки.
+    command: ["./node_modules/.bin/tsx", "src/worker/index.ts"]
+    environment:
+      DATABASE_URL: postgresql://props:props@db:5432/props
+      TREASURY_WALLET: ${TREASURY_WALLET:-}
+      SOLANA_RPC_URL: ${SOLANA_RPC_URL:-}
+      USDC_MINT: ${USDC_MINT:-}
+      TAKER_FEE_RATE: ${TAKER_FEE_RATE:-0.0005}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
 
 volumes:
   pgdata:
