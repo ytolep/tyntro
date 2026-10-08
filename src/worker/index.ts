@@ -15,7 +15,7 @@ const STOP_TIMEOUT_MS = 10_000;
 
 // Реальный RPC на SOLANA_RPC_URL (публичный mainnet как запасной);
 // циклPayments идёт строго последовательно — наложения запусков нет.
-const paymentsRpc = createSolanaRpc(process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com');
+const paymentsRpc = createSolanaRpc(process.env.PAYMENTS_RPC_URL || process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com');
 
 let running = true;
 

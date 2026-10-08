@@ -12,6 +12,6 @@ export function getPaymentsConfig(): PaymentsConfig {
   return {
     treasuryWallet,
     usdcMint: process.env.USDC_MINT ?? 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
-    rpcUrl: process.env.SOLANA_RPC_URL ?? 'https://api.mainnet-beta.solana.com',
+    rpcUrl: process.env.PAYMENTS_RPC_URL || process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com',
   };
 }
