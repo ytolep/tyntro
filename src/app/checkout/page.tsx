@@ -1,9 +1,27 @@
 'use client';
 
-import React, { useState, Suspense } from 'react';
-import { useSearchParams, useRouter } from 'next/navigation';
+import React, { Suspense, useCallback, useEffect, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { getPrice, PLAN_CONFIGS } from '@/lib/pricingConfig';
-import { ShieldCheck, Wallet, ArrowRight, CheckCircle2, Loader2 } from 'lucide-react';
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Copy,
+  ExternalLink,
+  Loader2,
+  ShieldCheck,
+} from 'lucide-react';
+
+interface PurchaseInfo {
+  id: string;
+  reference: string;
+  amount: string;
+  url: string;
+}
+
+type CheckoutStatus = 'LOADING' | 'PENDING' | 'PAID' | 'EXPIRED';
+
+const POLL_MS = 2500;
 
 function CheckoutContent() {
   const searchParams = useSearchParams();
@@ -15,31 +33,73 @@ function CheckoutContent() {
   const config = PLAN_CONFIGS[plan];
   const price = getPrice(size, plan);
 
-  const [loading, setLoading] = useState(false);
-  const [success, setSuccess] = useState(false);
+  const [purchase, setPurchase] = useState<PurchaseInfo | null>(null);
+  const [status, setStatus] = useState<CheckoutStatus>('LOADING');
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
-  const handleCheckout = async () => {
-    setLoading(true);
+  const createPurchase = useCallback(async () => {
+    setStatus('LOADING');
+    setError(null);
+    setPurchase(null);
     try {
-      const res = await fetch('/api/checkout', {
+      const res = await fetch('/api/checkout/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ accountSize: size, planType: plan }),
       });
-
-      if (!res.ok) throw new Error('Checkout failed');
-
-      const result = await res.json();
-      localStorage.setItem('activeAccountId', result.accountId);
-      setSuccess(true);
-      setTimeout(() => {
-        router.push('/dashboard');
-      }, 1200);
+      if (res.status === 401) {
+        setError('Sign in with your Solana wallet to purchase a challenge.');
+        return;
+      }
+      if (!res.ok) throw new Error('Failed to create payment request');
+      setPurchase((await res.json()) as PurchaseInfo);
+      setStatus('PENDING');
     } catch (err) {
       console.error(err);
-      alert('Challenge creation failed. Please try again.');
-    } finally {
-      setLoading(false);
+      setError('Could not start checkout. Please try again.');
+    }
+  }, [size, plan]);
+
+  useEffect(() => {
+    void createPurchase();
+  }, [createPurchase]);
+
+  // Поллинг статуса, пока покупка ждёт оплаты; подтверждает воркер по reference-ключу.
+  useEffect(() => {
+    if (!purchase || status !== 'PENDING') return;
+    const timer = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/checkout/status?id=${encodeURIComponent(purchase.id)}`);
+        if (!res.ok) return;
+        const data: { status: string; accountId: string | null } = await res.json();
+        if (data.status === 'PAID') {
+          if (data.accountId) localStorage.setItem('activeAccountId', data.accountId);
+          setStatus('PAID');
+        } else if (data.status === 'EXPIRED') {
+          setStatus('EXPIRED');
+        }
+      } catch {
+        /* следующий тик поллинга */
+      }
+    }, POLL_MS);
+    return () => clearInterval(timer);
+  }, [purchase, status]);
+
+  useEffect(() => {
+    if (status !== 'PAID') return;
+    const timeout = setTimeout(() => router.push('/dashboard'), 1000);
+    return () => clearTimeout(timeout);
+  }, [status, router]);
+
+  const copyLink = async () => {
+    if (!purchase) return;
+    try {
+      await navigator.clipboard.writeText(purchase.url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* буфер обмена недоступен — ссылку можно скопировать из адресной строки кошелька */
     }
   };
 
@@ -50,11 +110,11 @@ function CheckoutContent() {
           <ShieldCheck className="w-6 h-6 text-profit" /> Challenge Checkout
         </h1>
         <p className="text-xs text-gray-400 font-sans mb-8">
-          Review your evaluation parameters and complete simulated provisioning.
+          Review your evaluation parameters and pay in USDC via Solana Pay.
         </p>
 
         {/* Order Summary */}
-        <div className="bg-[#101015] p-6 rounded-xl border border-surface-border space-y-4 font-mono text-sm mb-8">
+        <div className="bg-[#101015] p-6 rounded-xl border border-surface-border space-y-4 font-mono text-sm mb-6">
           <div className="flex justify-between items-center border-b border-surface-border/60 pb-3">
             <span className="text-gray-400">ACCOUNT SIZE</span>
             <span className="text-lg font-bold text-white">${size.toLocaleString()}</span>
@@ -82,38 +142,94 @@ function CheckoutContent() {
 
           <div className="flex justify-between items-center pt-2">
             <span className="text-base font-bold text-gray-200">TOTAL DUE</span>
-            <span className="text-2xl font-extrabold text-profit">${price} USD</span>
+            <span className="text-2xl font-extrabold text-profit">${price} USDC</span>
           </div>
         </div>
 
-        {/* Checkout Button */}
-        <button
-          onClick={handleCheckout}
-          disabled={loading || success}
-          className="w-full py-4 bg-gradient-to-r from-brand-600 via-profit to-brand-500 hover:opacity-90 text-black font-extrabold rounded-xl text-base transition-all flex items-center justify-center space-x-2 shadow-lg shadow-brand-500/20 disabled:opacity-50"
-        >
-          {loading ? (
-            <>
-              <Loader2 className="w-5 h-5 animate-spin" />
-              <span>Provisioning Account...</span>
-            </>
-          ) : success ? (
-            <>
-              <CheckCircle2 className="w-5 h-5" />
-              <span>Account Provisioned! Redirecting...</span>
-            </>
-          ) : (
-            <>
-              <Wallet className="w-5 h-5" />
-              <span>Pay ${price} & Activate Account</span>
-              <ArrowRight className="w-5 h-5 ml-1" />
-            </>
-          )}
-        </button>
+        {/* Payment flow */}
+        {error && (
+          <div className="bg-red-950/40 border border-red-800/60 p-5 rounded-xl flex flex-col gap-3 items-start">
+            <div className="flex items-center gap-2 text-red-300 text-sm">
+              <AlertTriangle className="w-4 h-4" /> {error}
+            </div>
+            <button
+              onClick={() => void createPurchase()}
+              className="px-4 py-2 rounded-lg border border-red-700 text-red-200 text-xs hover:bg-red-900/40 transition-colors"
+            >
+              Try again
+            </button>
+          </div>
+        )}
 
-        <p className="text-[11px] text-gray-500 text-center font-mono mt-4">
-          Simulation Mode • Instant provisioning in database
-        </p>
+        {status === 'LOADING' && !error && (
+          <div className="flex items-center justify-center gap-3 text-gray-400 text-sm py-8">
+            <Loader2 className="w-5 h-5 animate-spin text-profit" />
+            <span>Creating payment request…</span>
+          </div>
+        )}
+
+        {purchase && status === 'PENDING' && (
+          <div className="bg-[#101015] p-6 rounded-xl border border-surface-border space-y-5">
+            <div className="flex justify-between items-center font-mono text-sm">
+              <span className="text-gray-400">AMOUNT DUE</span>
+              <span className="text-xl font-extrabold text-profit">${purchase.amount} USDC</span>
+            </div>
+
+            <p className="text-[11px] text-gray-500 font-sans leading-relaxed">
+              Open the payment link in a Solana wallet with USDC. The request specifies the
+              treasury address, exact amount and a unique reference key — the challenge account
+              is activated automatically once the transfer is confirmed on-chain.
+            </p>
+
+            {/* QR-рендер без новой зависимости невозможен; ссылка solana: валидна по спецификации
+                Solana Pay — кошельки и мобильные камеры открывают её напрямую. */}
+            <a
+              href={purchase.url}
+              className="w-full py-4 bg-gradient-to-r from-brand-600 via-profit to-brand-500 hover:opacity-90 text-black font-extrabold rounded-xl text-base transition-all flex items-center justify-center space-x-2 shadow-lg shadow-brand-500/20"
+            >
+              <ExternalLink className="w-5 h-5" />
+              <span>Open in wallet — pay ${purchase.amount} USDC</span>
+            </a>
+
+            <button
+              onClick={() => void copyLink()}
+              className="w-full py-3 rounded-xl border border-surface-border text-gray-300 text-sm hover:bg-white/5 transition-colors flex items-center justify-center gap-2"
+            >
+              <Copy className="w-4 h-4" />
+              <span>{copied ? 'Copied!' : 'Copy payment link'}</span>
+            </button>
+
+            <div className="flex items-center gap-3 text-xs text-gray-500 pt-1">
+              <Loader2 className="w-4 h-4 animate-spin text-profit" />
+              <span>
+                Waiting for payment… reference {purchase.reference.slice(0, 8)}…
+                (expires after 30 minutes)
+              </span>
+            </div>
+          </div>
+        )}
+
+        {status === 'EXPIRED' && (
+          <div className="bg-amber-950/40 border border-amber-800/60 p-5 rounded-xl flex flex-col gap-3 items-start">
+            <div className="flex items-center gap-2 text-amber-300 text-sm">
+              <AlertTriangle className="w-4 h-4" />
+              <span>Payment request expired after 30 minutes. No funds were received.</span>
+            </div>
+            <button
+              onClick={() => void createPurchase()}
+              className="px-4 py-2 rounded-lg border border-amber-700 text-amber-200 text-xs hover:bg-amber-900/40 transition-colors"
+            >
+              Create new payment request
+            </button>
+          </div>
+        )}
+
+        {status === 'PAID' && (
+          <div className="bg-profit/10 border border-profit/40 p-5 rounded-xl flex items-center gap-3 text-sm">
+            <CheckCircle2 className="w-5 h-5 text-profit" />
+            <span className="text-profit font-bold">Payment confirmed — redirecting to your dashboard…</span>
+          </div>
+        )}
       </div>
     </div>
   );
