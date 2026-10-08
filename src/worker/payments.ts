@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { db } from '@/lib/db';
 import { withAccountLock } from '@/lib/db/lock';
@@ -58,43 +59,66 @@ async function findVerifiedSignature(
   const signatures = await rpc.getSignaturesForAddress(reference);
   for (const { signature } of signatures) {
     const tx: ParsedTransaction | null = await rpc.getParsedTransaction(signature);
-    if (tx && verifyUsdcTransfer(tx, { treasury, splToken: mint, expectedAmount: amount })) return signature;
+    // Список сигнатур получен через getSignaturesForAddress(reference), но транзакция
+    // обязана нести reference этой покупки и среди ключей аккаунтов (H1).
+    if (tx && verifyUsdcTransfer(tx, { treasury, splToken: mint, expectedAmount: amount, reference }))
+      return signature;
   }
   return null;
 }
 
-/** PAID + TradingAccount (CHALLENGE/ACTIVE, балансы = accountSize) + DEPOSIT-проводка; идемпотентно. */
+/**
+ * PAID + TradingAccount (CHALLENGE/ACTIVE, балансы = accountSize) + DEPOSIT-проводка;
+ * идемпотентно. Одна on-chain транзакция подтверждает максимум одну покупку (H1):
+ * подпись, использованная другой покупкой, отвергается — покупка остаётся PENDING
+ * (без счёта) и истекает по таймауту.
+ */
 async function confirmPurchase(purchaseId: string, txSignature: string): Promise<boolean> {
-  return withAccountLock(`purchase:${purchaseId}`, async (tx) => {
-    const purchase = await tx.purchase.findUnique({ where: { id: purchaseId }, include: { challenge: true } });
-    if (!purchase || purchase.status !== 'PENDING') return false;
+  try {
+    return await withAccountLock(`purchase:${purchaseId}`, async (tx) => {
+      const purchase = await tx.purchase.findUnique({ where: { id: purchaseId }, include: { challenge: true } });
+      if (!purchase || purchase.status !== 'PENDING') return false;
 
-    const size = purchase.challenge.accountSize;
-    const account = await tx.tradingAccount.create({
-      data: {
-        userId: purchase.userId,
-        challengeId: purchase.challengeId,
-        mode: 'CHALLENGE',
-        phase: 'CHALLENGE',
-        status: 'ACTIVE',
-        rulesHash: computeRulesHash(purchase.challenge),
-        accountSize: size,
-        currentBalance: size,
-        currentEquity: size,
-        dayStartEquity: size,
-        staticMaxDdFloor: size.times(1 - purchase.challenge.maxDdPct / 100),
-        dailyDdFloor: size.times(1 - purchase.challenge.dailyDdPct / 100),
-      },
+      // Подпись уже потрачена другой покупкой. При гонке двух подтверждений
+      // (разные advisory-локи) добивает уникальный индекс Purchase.txSignature.
+      const usedBy = await tx.purchase.findFirst({
+        where: { txSignature, id: { not: purchaseId } },
+        select: { id: true },
+      });
+      if (usedBy) return false;
+
+      const size = purchase.challenge.accountSize;
+      const account = await tx.tradingAccount.create({
+        data: {
+          userId: purchase.userId,
+          challengeId: purchase.challengeId,
+          mode: 'CHALLENGE',
+          phase: 'CHALLENGE',
+          status: 'ACTIVE',
+          rulesHash: computeRulesHash(purchase.challenge),
+          accountSize: size,
+          currentBalance: size,
+          currentEquity: size,
+          dayStartEquity: size,
+          staticMaxDdFloor: size.times(1 - purchase.challenge.maxDdPct / 100),
+          dailyDdFloor: size.times(1 - purchase.challenge.dailyDdPct / 100),
+        },
+      });
+      // Инвариант §5: баланс счёта равен сумме проводок — DEPOSIT на весь accountSize.
+      await tx.ledgerEntry.create({
+        data: { accountId: account.id, type: 'DEPOSIT', amount: size, refId: purchase.id },
+      });
+      await tx.purchase.update({
+        where: { id: purchase.id },
+        data: { status: 'PAID', txSignature, accountId: account.id },
+      });
+      console.log(JSON.stringify({ level: 'info', msg: 'purchase confirmed', purchaseId: purchase.id, accountId: account.id }));
+      return true;
     });
-    // Инвариант §5: баланс счёта равен сумме проводок — DEPOSIT на весь accountSize.
-    await tx.ledgerEntry.create({
-      data: { accountId: account.id, type: 'DEPOSIT', amount: size, refId: purchase.id },
-    });
-    await tx.purchase.update({
-      where: { id: purchase.id },
-      data: { status: 'PAID', txSignature, accountId: account.id },
-    });
-    console.log(JSON.stringify({ level: 'info', msg: 'purchase confirmed', purchaseId: purchase.id, accountId: account.id }));
-    return true;
-  });
+  } catch (error) {
+    // Уникальный конфликт по txSignature при гонке: транзакция БД откатилась
+    // (счёт и проводка не созданы), покупка остаётся PENDING.
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') return false;
+    throw error;
+  }
 }

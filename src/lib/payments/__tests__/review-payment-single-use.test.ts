@@ -5,17 +5,16 @@ import { Keypair } from '@solana/web3.js';
 import { Decimal } from '@prisma/client/runtime/library';
 import type { ParsedTransaction, SolanaRpc } from '../solanaPay';
 
-// Ревью (агент L): одна транзакция Solana Pay может подтвердить N покупок.
+// Ревью (агент L), H1: одна транзакция Solana Pay может подтвердить N покупок.
 // getSignaturesForAddress(reference) возвращает все транзакции, где pubkey
 // reference встречается среди account keys — в том числе read-only без подписи.
 // Атакующий создаёт покупки P1..PN и собирает ОДИН перевод 89 USDC на ATA казны,
-// включив все N reference-ключей в account keys. Воркер подтверждает каждую
-// покупку по своему reference: verifyUsdcTransfer проверяет только перевод,
-// а дедупликации по txSignature нет (Purchase.txSignature не уникален).
+// включив все N reference-ключей в account keys.
 //
-// Тест ПАДАЕТ на текущем коде (ожидаем ровно одну PAID-покупку на одну
-// транзакцию, сейчас подтверждается две) — помечен skip, чтобы ворота
-// оставались зелёными. Снять skip после исправления (см. docs/REVIEW.md, H1).
+// Исправление (волна 4, агент X1): Purchase.txSignature @unique + в
+// confirmPurchase отвергается подпись, уже использованная другой покупкой
+// (уникальный конфликт → покупка остаётся PENDING). Первой подтверждается
+// ровно одна покупка транзакции.
 
 if (!process.env.DATABASE_URL?.includes('props_test'))
   throw new Error('Refusing to run: DATABASE_URL must point at props_test (see .env.test)');
@@ -57,9 +56,9 @@ before(async () => {
 
 after(async () => { await db?.$disconnect(); });
 
-test.skip('one on-chain transfer must confirm at most one purchase (multi-reference transaction)', async () => {
+test('one on-chain transfer must confirm at most one purchase (multi-reference transaction)', async () => {
   const ata = solanaPay.associatedTokenAddress(treasury, mint);
-  const _p1 = await purchase.createPendingPurchase(userId, 10000, 'CORE');
+  const p1 = await purchase.createPendingPurchase(userId, 10000, 'CORE');
   const p2 = await purchase.createPendingPurchase(userId, 10000, 'CORE');
 
   // Один перевод 89 USDC; RPC для ОБЕИХ reference возвращает одну и ту же
@@ -69,6 +68,7 @@ test.skip('one on-chain transfer must confirm at most one purchase (multi-refere
     meta: { err: null, innerInstructions: [] },
     transaction: {
       message: {
+        accountKeys: [p1.reference, p2.reference, 'source', 'authority', ata],
         instructions: [
           {
             programId: TOKEN_PROGRAM_ID,
@@ -89,6 +89,9 @@ test.skip('one on-chain transfer must confirm at most one purchase (multi-refere
   assert.equal(paid, 1, 'повторное использование txSignature не должно подтверждать вторую покупку');
   assert.equal(await db.purchase.count({ where: { status: 'PAID', txSignature: 'sig-shared' } }), 1);
   assert.equal(await db.tradingAccount.count(), 1, 'один платёж — один счёт');
-  const stillPending = await db.purchase.findUniqueOrThrow({ where: { id: p2.purchaseId } });
-  assert.notEqual(stillPending.status, 'PAID');
+  // Подтверждена ровно одна из двух — вторая остаётся не-PAID (PENDING):
+  // порядок обработки findMany не гарантирован, поэтому не привязываемся к P2.
+  const rows = await db.purchase.findMany({ where: { id: { in: [p1.purchaseId, p2.purchaseId] } } });
+  assert.equal(rows.filter((r) => r.status === 'PAID').length, 1);
+  assert.equal(rows.filter((r) => r.status !== 'PAID').length, 1);
 });

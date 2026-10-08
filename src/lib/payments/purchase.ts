@@ -45,6 +45,9 @@ export interface CreatedPurchase {
   payUrl: string;
 }
 
+/** L3: максимум одновременно PENDING-покупок на пользователя (анти-флуд). */
+export const MAX_PENDING_PURCHASES = 3;
+
 /**
  * Purchase PENDING с новым reference-ключом и ссылкой Solana Pay.
  * Цена — из строки Challenge (сидится из pricingConfig), не из запроса клиента.
@@ -62,6 +65,14 @@ export async function createPendingPurchase(
     where: { accountSize_planType: { accountSize: new Decimal(accountSize), planType: plan } },
   });
   if (!challenge) throw new CheckoutError(409, 'Challenge is not configured');
+
+  // L3: каждая PENDING-покупка — цикл RPC-вызовов в воркере каждые 15 с;
+  // просроченные уходят в EXPIRED и освобождают слоты.
+  // ponytail: check-then-insert, гонка может выпустить лишнюю PENDING — потолок
+  // не денежный; транзакционный гард, если понадобится строгий лимит.
+  const pendingCount = await db.purchase.count({ where: { userId, status: 'PENDING' } });
+  if (pendingCount >= MAX_PENDING_PURCHASES)
+    throw new CheckoutError(409, 'Too many pending purchases: pay or wait for expiry');
 
   const reference = Keypair.generate().publicKey.toBase58();
   const amount = challenge.priceUsd;

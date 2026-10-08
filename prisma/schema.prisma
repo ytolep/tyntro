@@ -66,7 +66,8 @@ model Purchase {
   reference   String           @unique
   amountUsdc  Decimal          @db.Decimal(38, 18)
   status      String           @default("PENDING") // PENDING | PAID | EXPIRED
-  txSignature String?
+  // H1: один on-chain перевод подтверждает максимум одну покупку.
+  txSignature String?          @unique
   accountId   String?
   account     TradingAccount?  @relation(fields: [accountId], references: [id])
   createdAt   DateTime         @default(now())

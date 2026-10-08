@@ -30,10 +30,13 @@ const fakeRpc = (signatures: string[], txs: Record<string, ParsedTransaction>): 
   getParsedTransaction: async (signature) => txs[signature] ?? null,
 });
 
-const transferTx = (amountMinor: string, destination: string): ParsedTransaction => ({
+// Реалистичный фейк: reference присутствует среди account keys — именно поэтому
+// getSignaturesForAddress(reference) и возвращает сигнатуру этой транзакции.
+const transferTx = (amountMinor: string, destination: string, reference: string): ParsedTransaction => ({
   meta: { err: null, innerInstructions: [] },
   transaction: {
     message: {
+      accountKeys: [reference, 'source', 'authority', destination],
       instructions: [
         {
           programId: TOKEN_PROGRAM_ID,
@@ -75,7 +78,7 @@ test('correct transfer confirms purchase exactly once, even on repeated and conc
   assert.ok(created.payUrl.startsWith(`solana:${treasury}?`));
   assert.ok(created.payUrl.includes(`reference=${created.reference}`));
 
-  const rpc = fakeRpc(['sig-ok'], { 'sig-ok': transferTx('89000000', ata) });
+  const rpc = fakeRpc(['sig-ok'], { 'sig-ok': transferTx('89000000', ata, created.reference) });
   assert.deepEqual(await payments.checkPendingPayments({ rpc }), { paid: 1, expired: 0 });
   // Повторный цикл ничего не создаёт и не меняет.
   assert.deepEqual(await payments.checkPendingPayments({ rpc }), { paid: 0, expired: 0 });
@@ -100,10 +103,12 @@ test('correct transfer confirms purchase exactly once, even on repeated and conc
   assert.equal(entries[0].type, 'DEPOSIT');
 
   // Гонка: два одновременных цикла по одной PENDING-покупке дают ровно один счёт.
+  // Своя on-chain транзакция (H1: одна сигнатура не может подтвердить две покупки).
   const second = await purchase.createPendingPurchase(userId, 10000, 'CORE');
+  const rpc2 = fakeRpc(['sig-ok-2'], { 'sig-ok-2': transferTx('89000000', ata, second.reference) });
   const [a, b] = await Promise.all([
-    payments.checkPendingPayments({ rpc }),
-    payments.checkPendingPayments({ rpc }),
+    payments.checkPendingPayments({ rpc: rpc2 }),
+    payments.checkPendingPayments({ rpc: rpc2 }),
   ]);
   assert.equal(a.paid + b.paid, 1);
   const secondAccounts = await db.tradingAccount.count({
@@ -118,14 +123,14 @@ test('underpaid, wrong-destination and failed transfers never create an account'
   const otherAta = solanaPay.associatedTokenAddress(Keypair.generate().publicKey.toBase58(), mint);
   const created = await purchase.createPendingPurchase(userId, 10000, 'CORE');
 
-  const failed = transferTx('89000000', ata);
+  const failed = transferTx('89000000', ata, created.reference);
   failed.meta = { err: 'InstructionError', innerInstructions: [] };
 
   const rpc = fakeRpc(
     ['sig-low', 'sig-wrong-dest', 'sig-failed'],
     {
-      'sig-low': transferTx('88000000', ata), // 88 < 89 — недоплата
-      'sig-wrong-dest': transferTx('89000000', otherAta), // перевод не на ATA казны
+      'sig-low': transferTx('88000000', ata, created.reference), // 88 < 89 — недоплата
+      'sig-wrong-dest': transferTx('89000000', otherAta, created.reference), // перевод не на ATA казны
       'sig-failed': failed, // упавшая транзакция
     },
   );
@@ -174,6 +179,7 @@ test('transfer request url matches Solana Pay spec; transferChecked with wrong a
     meta: { err: null, innerInstructions: [] },
     transaction: {
       message: {
+        accountKeys: [reference, ata],
         instructions: [
           {
             programId: TOKEN_PROGRAM_ID,
@@ -183,7 +189,31 @@ test('transfer request url matches Solana Pay spec; transferChecked with wrong a
       },
     },
   };
-  assert.ok(solanaPay.verifyUsdcTransfer(txChecked, { treasury: recipient, splToken, expectedAmount: new Decimal(89) }));
-  assert.ok(!solanaPay.verifyUsdcTransfer(txChecked, { treasury: recipient, splToken, expectedAmount: new Decimal(90) }));
-  assert.ok(!solanaPay.verifyUsdcTransfer(txChecked, { treasury: recipient, splToken: splToken === reference ? ata : reference, expectedAmount: new Decimal(89) }));
+  assert.ok(solanaPay.verifyUsdcTransfer(txChecked, { treasury: recipient, splToken, expectedAmount: new Decimal(89), reference }));
+  assert.ok(!solanaPay.verifyUsdcTransfer(txChecked, { treasury: recipient, splToken, expectedAmount: new Decimal(90), reference }));
+  // Чужой reference отсутствует в accountKeys → перевод не подтверждает покупку (H1).
+  const foreign = Keypair.generate().publicKey.toBase58();
+  assert.ok(!solanaPay.verifyUsdcTransfer(txChecked, { treasury: recipient, splToken, expectedAmount: new Decimal(89), reference: foreign }));
+  assert.ok(!solanaPay.verifyUsdcTransfer(txChecked, { treasury: recipient, splToken: reference, expectedAmount: new Decimal(89), reference }));
+});
+
+test('at most 3 pending purchases per user; expiry frees the slots (L3)', async () => {
+  const flood = await db.user.create({ data: { walletAddress: 'pay-flood' } });
+  for (let i = 0; i < purchase.MAX_PENDING_PURCHASES; i++)
+    await purchase.createPendingPurchase(flood.id, 10000, 'CORE');
+
+  await assert.rejects(
+    () => purchase.createPendingPurchase(flood.id, 10000, 'CORE'),
+    (e: unknown) => e instanceof purchase.CheckoutError && e.status === 409,
+  );
+
+  // Старые PENDING истекают как раньше — слоты освобождаются.
+  await db.purchase.updateMany({
+    where: { userId: flood.id, status: 'PENDING' },
+    data: { createdAt: new Date(Date.now() - 31 * 60_000) },
+  });
+  const res = await payments.checkPendingPayments({ rpc: fakeRpc([], {}) });
+  assert.equal(res.expired, purchase.MAX_PENDING_PURCHASES);
+  const again = await purchase.createPendingPurchase(flood.id, 10000, 'CORE');
+  assert.ok(again.purchaseId);
 });

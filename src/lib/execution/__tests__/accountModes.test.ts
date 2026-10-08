@@ -16,14 +16,15 @@ if (!process.env.DATABASE_URL?.includes('props_test'))
 const cleanEnv = (): NodeJS.ProcessEnv =>
   Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('CLAUDE'))) as NodeJS.ProcessEnv;
 
-let db: any, accounts: any, checkout: any, orders: any, createSession: any;
+let db: any, accounts: any, orders: any, createSession: any;
 let demoCookie: string, otherCookie: string;
 
 before(async () => {
   execFileSync(process.execPath, ['node_modules/prisma/build/index.js', 'db', 'push', '--force-reset', '--skip-generate'], { stdio: 'pipe', env: cleanEnv() });
   db = (await import('../../db')).db;
   accounts = (await import('../../../app/api/accounts/active/route')).GET;
-  checkout = (await import('../../../app/api/checkout/route')).POST;
+  // Легаси-роут /api/checkout удалён (docs/REVIEW.md C1): счёт создаётся только
+  // через /api/checkout/create + подтверждение оплаты воркером (payments.test.ts).
   orders = (await import('../../../app/api/orders/route')).POST;
   createSession = (await import('../../auth/session')).createSession;
   await db.user.create({ data: { id: 'demo', walletAddress: 'demo' } });
@@ -86,20 +87,6 @@ test('simulator account view carries decimal-strings and a live riskEval from ev
   assert.equal(result.riskEval.breach, null);
 });
 
-test('checkout always creates challenge capital, ignoring forged funded fields', async () => {
-  const response = await checkout(request({ accountSize: 10000, planType: 'CORE', mode: 'FUNDED', status: 'FUNDED' }));
-  assert.equal(response.status, 200);
-  const result = await response.json();
-  const a = await db.tradingAccount.findUnique({ where: { id: result.accountId } });
-  assert.equal(a.mode, 'CHALLENGE');
-  assert.equal(a.status, 'ACTIVE');
-  assert.equal(result.capital, 'VIRTUAL');
-  // Инвариант §5: баланс счёта равен сумме его проводок.
-  const entries = await db.ledgerEntry.findMany({ where: { accountId: a.id } });
-  const ledgerSum = entries.reduce((sum: Decimal, e: { amount: Decimal }) => sum.plus(e.amount), new Decimal(0));
-  assert.equal(ledgerSum.toFixed(2), a.currentBalance.toFixed(2));
-  assert.equal((await checkout(request({ accountSize: 12345, planType: 'CORE' }))).status, 400);
-});
 
 test('policy rejects unknown modes and never lets a status override route into simulation', () => {
   assert.throws(() => assertSimulationAction({ mode: 'UNKNOWN', status: 'ACTIVE' }, 'OPEN_POSITION'));

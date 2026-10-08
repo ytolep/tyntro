@@ -52,22 +52,33 @@ export interface PaymentInstruction {
 
 export interface ParsedTransaction {
   meta: { err: unknown; innerInstructions?: { instructions: PaymentInstruction[] }[] } | null;
-  transaction: { message: { instructions: PaymentInstruction[] } };
+  transaction: {
+    message: {
+      // Все ключи транзакции (в web3.js — accountKeys сообщения).
+      accountKeys: string[];
+      instructions: PaymentInstruction[];
+    },
+  };
 }
 
 export interface VerifyTransferOptions {
   treasury: string;
   splToken: string;
   expectedAmount: Decimal; // USDC, не минорные единицы
+  reference: string; // base58 reference-ключ этой покупки
 }
 
 /**
  * Успешная (err == null) транзакция содержит перевод USDC на ATA казны
- * на сумму не меньше expectedAmount. Список сигнатур мы получили через
- * getSignaturesForAddress(reference), поэтому транзакция уже привязана к покупке.
+ * на сумму не меньше expectedAmount, а reference этой покупки — среди ключей
+ * аккаунтов транзакции (Solana Pay кладёт его read-only ключом в инструкцию
+ * перевода; все ключи инструкции входят в accountKeys сообщения).
  */
 export function verifyUsdcTransfer(tx: ParsedTransaction, opts: VerifyTransferOptions): boolean {
   if (!tx.meta || tx.meta.err != null) return false;
+  // H1: транзакция без reference этой покупки к ней не относится — иначе один
+  // перевод с N чужими reference-ключами подтверждал бы N покупок.
+  if (!tx.transaction.message.accountKeys.includes(opts.reference)) return false;
   const ata = associatedTokenAddress(opts.treasury, opts.splToken);
   const expectedMinor = opts.expectedAmount.times(10 ** USDC_DECIMALS).toFixed(0);
   const instructions = [
@@ -124,6 +135,7 @@ export function createSolanaRpc(url: string): SolanaRpc {
         },
         transaction: {
           message: {
+            accountKeys: tx.transaction.message.accountKeys.map((k) => k.pubkey.toString()),
             instructions: tx.transaction.message.instructions.map(plain),
           },
         },

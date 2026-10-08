@@ -168,7 +168,7 @@ async function adjustTo(
  * покупки. Реальной транзакции и траты USDC нет; проверяется та же логика
  * воркера (findVerifiedSignature → verifyUsdcTransfer → confirmPurchase).
  */
-function fakeSolanaRpc(amount: Decimal) {
+function fakeSolanaRpc(amount: Decimal, reference: string) {
   const ata = associatedTokenAddress(TREASURY_WALLET, USDC_MINT);
   const amountMinor = amount.times(10 ** USDC_DECIMALS).toFixed(0);
   const signature = Keypair.generate().publicKey.toBase58(); // правдоподобная строка, транзакции нет
@@ -176,6 +176,7 @@ function fakeSolanaRpc(amount: Decimal) {
     meta: { err: null, innerInstructions: [] },
     transaction: {
       message: {
+        accountKeys: [reference], // Solana Pay несёт reference среди ключей транзакции
         instructions: [
           {
             programId: TOKEN_PROGRAM_ID,
@@ -235,6 +236,7 @@ async function main(): Promise<void> {
     traderCookie: '',
     adminCookie: '',
     purchaseId: '',
+    reference: '',
     amount: new Decimal(0),
     accountId: '',
     positionId: '',
@@ -260,11 +262,12 @@ async function main(): Promise<void> {
       check(url.startsWith(`solana:${TREASURY_WALLET}?`), 'URL Solana Pay ведёт не на TREASURY_WALLET приложения');
       check(url.includes(`spl-token=${encodeURIComponent(USDC_MINT)}`), 'в URL другой USDC-mint, чем в env скрипта');
       S.purchaseId = res.body.id;
+      S.reference = res.body.reference;
       S.amount = d(res.body.amount);
     }],
 
     ['оплата: подтверждение напрямую checkPendingPayments с фейковым RPC (USDC не тратится)', async () => {
-      const { paid } = await checkPendingPayments({ rpc: fakeSolanaRpc(S.amount) });
+      const { paid } = await checkPendingPayments({ rpc: fakeSolanaRpc(S.amount, S.reference) });
       eq(paid, 1, 'подтверждённых покупок за цикл');
       const res = await http('GET', `/api/checkout/status?id=${S.purchaseId}`, { cookie: S.traderCookie });
       eq(res.status, 200, 'GET /api/checkout/status');
