@@ -2,6 +2,8 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { activeAccountUrl } from '@/lib/activeAccount';
+import { useAuth } from '@/lib/auth/AuthContext';
+import SignInRequired from '@/components/SignInRequired';
 
 type FundedStage =
   | { kind: 'loading' }
@@ -11,6 +13,7 @@ type FundedStage =
   | { kind: 'funded' };
 
 export default function FundedPage() {
+  const { user } = useAuth();
   const [stage, setStage] = useState<FundedStage>({ kind: 'loading' });
   const [accountId, setAccountId] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
@@ -64,6 +67,16 @@ export default function FundedPage() {
     }
   };
 
+  // Анониму вместо «выберите челлендж» — единое состояние «нужен вход» (аудит A4).
+  if (user === null) {
+    return (
+      <SignInRequired
+        title="Sign in to follow your path to funded"
+        text="Connect your Solana wallet to see your challenge stage and request a funded review."
+      />
+    );
+  }
+
   const stageText =
     stage.kind === 'funded'
       ? 'Funded account active · simulated execution (FUNDED_SIM)'
@@ -94,7 +107,7 @@ export default function FundedPage() {
       {stage.kind === 'passed' && !stage.requested && (
         <div className="flex flex-col gap-2 mt-6 max-w-md">
           <button className="button-primary" onClick={requestFunded} disabled={sending}>
-            {sending ? 'Sending…' : 'Запросить funded'}
+            {sending ? 'Sending…' : 'Request funded review'}
           </button>
           {error && <p className="text-red-400 text-sm">{error}</p>}
         </div>
