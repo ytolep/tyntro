@@ -1,8 +1,10 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { activeAccountUrl } from '@/lib/activeAccount';
 import AccountModeNotice, { FundedWorkspace } from '@/components/AccountModeNotice';
+import { BRAND_NAME } from '@/lib/brand';
 import { useMarketData } from '@/lib/marketData/MarketDataStore';
 import MarketHeader from './components/MarketHeader';
 import ChartPanel from './components/ChartPanel';
@@ -17,6 +19,7 @@ import { numOrNull, toNum, type AccountPayload, type FillRow, type OrderIntent, 
 const ACCOUNT_REFRESH_MS = 5000;
 
 type Toast = { message: string; type: 'success' | 'error' | 'info' } | null;
+type MobileTab = 'chart' | 'book' | 'trade';
 
 async function postOrdersApi(body: Record<string, unknown>): Promise<{ ok: boolean; status: number; json: Record<string, unknown> }> {
   const res = await fetch('/api/orders', {
@@ -44,7 +47,6 @@ export default function TerminalPage() {
     marketsError,
     marketsLoading,
     orderBook,
-    ticker,
     connectionStatus,
     selectMarket,
   } = useMarketData();
@@ -61,10 +63,15 @@ export default function TerminalPage() {
 
   const [accountData, setAccountData] = useState<AccountPayload | null>(null);
   const [executing, setExecuting] = useState<boolean>(false);
+  // R1: на узких экранах панели переключаются вкладками, по умолчанию Trade.
+  const [mobileTab, setMobileTab] = useState<MobileTab>('trade');
 
   const loadAccount = useCallback(async () => {
     try {
       const res = await fetch(activeAccountUrl());
+      // A3: 404 — вошёл, но счетов нет. Фиксируем «нет счёта», а не молчим,
+      // чтобы кнопка формы могла предложить челлендж вместо вечного «unavailable».
+      if (res.status === 404) { setAccountData({ account: null }); return; }
       const json = await res.json();
       if (json.account) {
         setAccountData(json);
@@ -159,6 +166,12 @@ export default function TerminalPage() {
   const fillsHistory: FillRow[] = account?.fills ?? [];
   const orderHistory: OrderRow[] = account?.orders ?? [];
 
+  // M4: доступная маржа = equity − Σ margin открытых позиций (margin = notional/leverage
+  // на момент открытия, хранится в БД). Без счёта — null, кнопки размера скрыты.
+  const equity = numOrNull(account?.currentEquity);
+  const usedMargin = openPositions.reduce((sum, p) => sum + toNum(p.margin), 0);
+  const availableMargin = equity !== null ? Math.max(0, equity - usedMargin) : null;
+
   if (accountData && accountData.execution?.provider !== 'SIMULATOR') return <FundedWorkspace />;
 
   return (
@@ -183,14 +196,21 @@ export default function TerminalPage() {
         markets={markets}
         marketsLoading={marketsLoading}
         marketsError={marketsError}
-        ticker={ticker}
         connectionStatus={connectionStatus}
         currentMarkPrice={currentMarkPrice}
+        orderBook={orderBook}
         onSelectMarket={selectMarket}
       />
 
+      {/* R1: мобильный переключатель панелей — виден только < 900px, десктоп не меняется */}
+      <div className="terminal-mobile-tabs" role="tablist" aria-label="Terminal panels">
+        <button role="tab" aria-selected={mobileTab === 'chart'} onClick={() => setMobileTab('chart')}>Chart</button>
+        <button role="tab" aria-selected={mobileTab === 'book'} onClick={() => setMobileTab('book')}>Order book</button>
+        <button role="tab" aria-selected={mobileTab === 'trade'} onClick={() => setMobileTab('trade')}>Trade</button>
+      </div>
+
       {/* MAIN LAYOUT: CHART (LEFT) + ORDERBOOK (MIDDLE) + ORDER FORM (RIGHT) */}
-      <div className="terminal-grid">
+      <div className="terminal-grid" data-mobile={mobileTab}>
         <ChartPanel symbol={selectedSymbol} />
         <OrderBook
           selectedMarket={selectedMarket}
@@ -202,8 +222,10 @@ export default function TerminalPage() {
           selectedMarket={selectedMarket}
           currentMarkPrice={currentMarkPrice}
           bookMidPrice={bookMidPrice}
-          equity={numOrNull(account?.currentEquity)}
+          availableMargin={availableMargin}
           canTrade={Boolean(accountData?.execution?.canTrade)}
+          accountLoaded={accountData !== null}
+          accountStatus={account?.status ?? null}
           marketsError={marketsError}
           hasSnapshot={Boolean(snapshot)}
           executing={executing}
@@ -223,14 +245,15 @@ export default function TerminalPage() {
         onCancelOrder={handleCancelOrder}
       />
 
-      {/* FOOTER BAR MATCHING PHOENIX */}
-      <footer className="bg-[#09090d] border-t border-[#25252e] px-6 py-3 flex items-center justify-between text-[11px] text-gray-500 font-mono">
-        <div>PROJECT Prop Trading Engine • Powered by TradingView & Phoenix DEX Architecture</div>
-        <div className="flex space-x-6">
-          <a href="#" className="hover:text-gray-300">Terms</a>
-          <a href="#" className="hover:text-gray-300">Privacy</a>
-          <a href="#" className="hover:text-gray-300">Docs</a>
-        </div>
+      {/* N4/R4: реальные ссылки на страницы правил, бренд из BRAND_NAME, компактный футер */}
+      <footer className="terminal-footer bg-[#09090d] border-t border-[#25252e] px-6 py-3 flex items-center justify-between text-[11px] text-gray-500 font-mono">
+        <span>{BRAND_NAME} · Simulated prop trading</span>
+        <nav className="flex space-x-6">
+          <Link href="/rules" className="hover:text-gray-300">Rules</Link>
+          <Link href="/terms" className="hover:text-gray-300">Terms</Link>
+          <Link href="/privacy" className="hover:text-gray-300">Privacy</Link>
+          <Link href="/faq" className="hover:text-gray-300">FAQ</Link>
+        </nav>
       </footer>
     </div>
   );

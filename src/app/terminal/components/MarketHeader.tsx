@@ -1,16 +1,16 @@
 'use client';
 import { useMemo, useState } from 'react';
 import { ChevronDown, Search } from 'lucide-react';
-import type { ConnectionStatus, Market, NormalizedTicker } from '@/lib/marketData/types';
+import type { ConnectionStatus, Market, NormalizedOrderBook } from '@/lib/marketData/types';
 
 interface MarketHeaderProps {
   selectedMarket: Market;
   markets: Market[];
   marketsLoading: boolean;
   marketsError: string | null;
-  ticker: NormalizedTicker | null;
   connectionStatus: ConnectionStatus;
   currentMarkPrice: number;
+  orderBook: NormalizedOrderBook | null;
   onSelectMarket: (symbol: string) => void;
 }
 
@@ -19,9 +19,9 @@ export default function MarketHeader({
   markets,
   marketsLoading,
   marketsError,
-  ticker,
   connectionStatus,
   currentMarkPrice,
+  orderBook,
   onSelectMarket,
 }: MarketHeaderProps) {
   const [showSymbolDropdown, setShowSymbolDropdown] = useState<boolean>(false);
@@ -36,6 +36,16 @@ export default function MarketHeader({
   }, [markets, marketSearch]);
 
   const priceDigits = selectedMarket.priceDecimals || 2;
+
+  // M2: показываем только то, что реально есть — Mark и спред из стакана.
+  // Недоступных полей нет вовсе, цвет — только у чисел, у прочерков нет.
+  const spreadLabel = !orderBook
+    ? null
+    : orderBook.spreadPct > 0
+      ? `${orderBook.spreadPct.toFixed(3)}%`
+      : orderBook.spread > 0
+        ? `$${orderBook.spread.toFixed(priceDigits)}`
+        : null;
 
   return (
     <div className="bg-[#101015] border-b border-[#25252e] px-4 py-2 flex flex-wrap items-center justify-between gap-4 text-xs">
@@ -104,58 +114,21 @@ export default function MarketHeader({
           )}
         </div>
 
-        {/* Header Stats Bar */}
+        {/* Header Stats Bar: только доступные поля (M2) */}
         <div className="terminal-market-stats flex items-center space-x-6 text-gray-400">
           <div>
             <span className="text-gray-500 text-[10px] block">{selectedMarket.type === 'perp' ? 'Mark' : 'Book midpoint'}</span>
-            <span className="text-white font-bold">
-              {currentMarkPrice > 0 ? `$${currentMarkPrice.toLocaleString('en-US', { minimumFractionDigits: priceDigits, maximumFractionDigits: priceDigits })}` : 'N/A'}
+            <span className={`font-bold ${currentMarkPrice > 0 ? 'text-white' : 'text-gray-500'}`}>
+              {currentMarkPrice > 0 ? `$${currentMarkPrice.toLocaleString('en-US', { minimumFractionDigits: priceDigits, maximumFractionDigits: priceDigits })}` : '—'}
             </span>
           </div>
-
-          {selectedMarket.type === 'perp' && (
-            <div>
-              <span className="text-gray-500 text-[10px] block">Index Price</span>
-              <span className="text-white font-bold">
-                {ticker?.indexPrice ? `$${ticker.indexPrice.toLocaleString('en-US', { minimumFractionDigits: priceDigits, maximumFractionDigits: priceDigits })}` : 'N/A'}
-              </span>
-            </div>
-          )}
 
           <div>
-            <span className="text-gray-500 text-[10px] block">24h Change</span>
-            <span className={`font-bold ${(ticker?.change24h ?? 0) >= 0 ? 'text-[#8ff0cc]' : 'text-[#ef8390]'}`}>
-              {ticker?.change24h !== null && ticker?.change24h !== undefined
-                ? `${ticker.change24h >= 0 ? '+' : ''}${ticker.change24h.toFixed(2)}%`
-                : 'N/A'}
+            <span className="text-gray-500 text-[10px] block">Spread</span>
+            <span className={`font-bold ${spreadLabel ? 'text-white' : 'text-gray-500'}`}>
+              {spreadLabel ?? '—'}
             </span>
           </div>
-
-          <div className="hidden xl:block">
-            <span className="text-gray-500 text-[10px] block">24h Volume</span>
-            <span className="text-gray-200 font-bold">
-              {ticker?.volume24h ? `$${(ticker.volume24h / 1000).toLocaleString('en-US', { maximumFractionDigits: 0 })}K` : 'N/A'}
-            </span>
-          </div>
-
-          {selectedMarket.type === 'perp' && (
-            <div className="hidden xl:block">
-              <span className="text-gray-500 text-[10px] block">Open Interest</span>
-              <span className="text-gray-200 font-bold">
-                {ticker?.openInterest ? `$${(ticker.openInterest / 1000).toLocaleString('en-US', { maximumFractionDigits: 0 })}K` : 'N/A'}
-              </span>
-            </div>
-          )}
-
-          {selectedMarket.type === 'perp' && (
-            <div className="hidden 2xl:block">
-              <span className="text-gray-500 text-[10px] block">1h Funding</span>
-              <span className="text-[#8ff0cc] font-bold">
-                {ticker?.fundingRate !== null && ticker?.fundingRate !== undefined ? `${(ticker.fundingRate * 100).toFixed(4)}%` : 'N/A'}
-                {ticker?.fundingTimeLeft && <span className="text-gray-500 font-normal ml-1">{ticker.fundingTimeLeft}</span>}
-              </span>
-            </div>
-          )}
         </div>
       </div>
 

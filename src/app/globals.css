@@ -117,3 +117,24 @@ html { scrollbar-gutter: stable; }
 .plan-why{margin:12px 0 0;font-size:11px;line-height:1.6;color:#9d92ab;border-left:2px solid var(--violet);padding-left:10px}
 @media(max-width:960px){.checkout-grid{grid-template-columns:1fr}.rule-example{grid-template-columns:1fr}}
 @media(max-width:600px){.checkout-page{padding:32px 0 50px}.checkout-panel{padding:19px}.summary-row{flex-wrap:wrap;gap:6px}.summary-row b{text-align:left}.legal-page{padding:40px 0 60px}.faq-item summary{font-size:14px}}
+/* U4 — терминал: мобильные вкладки панелей (R1), вкладки истории в одну строку (R3), компактный футер (R4) */
+.terminal-mobile-tabs{display:none}
+@media(max-width:900px){
+.terminal-mobile-tabs{display:flex;border-bottom:1px solid #25252e;background:#0e0d12}
+.terminal-mobile-tabs button{flex:1;padding:12px 4px;font-size:11px;font-weight:700;color:#8f829d;border-bottom:2px solid transparent}
+.terminal-mobile-tabs button[aria-selected="true"]{color:#fff;border-bottom-color:var(--violet)}
+.terminal-grid[data-mobile]>.terminal-chart,
+.terminal-grid[data-mobile]>.terminal-book,
+.terminal-grid[data-mobile]>.terminal-order{display:none}
+.terminal-grid[data-mobile="chart"]>.terminal-chart,
+.terminal-grid[data-mobile="book"]>.terminal-book,
+.terminal-grid[data-mobile="trade"]>.terminal-order{display:flex;flex-direction:column;grid-column:1/-1}
+}
+.terminal-activity div.terminal-tabs{flex-wrap:nowrap;overflow-x:auto;max-width:100%;scrollbar-width:none}
+.terminal-activity div.terminal-tabs::-webkit-scrollbar{display:none}
+.terminal-activity .terminal-tabs button{white-space:nowrap;flex-shrink:0}
+.terminal-footer{row-gap:8px;flex-wrap:wrap}
+@media(max-width:600px){
+.terminal-footer{padding:10px 14px;font-size:9px;gap:10px}
+.terminal-footer nav{gap:14px}
+}

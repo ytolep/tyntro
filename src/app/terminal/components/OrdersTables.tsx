@@ -5,7 +5,8 @@ import type { Market } from '@/lib/marketData/types';
 import PositionsTable from './PositionsTable';
 import { toNum, type FillRow, type OrderRow, type PositionRow } from '../types';
 
-type TabId = 'positions' | 'openOrders' | 'tradeHistory' | 'orderHistory' | 'fundingHistory';
+// M5: вкладки Funding History нет, пока движок учёта не пишет события фандинга.
+type TabId = 'positions' | 'openOrders' | 'tradeHistory' | 'orderHistory';
 
 interface OrdersTablesProps {
   positions: PositionRow[];
@@ -24,7 +25,6 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'openOrders', label: 'Open Orders' },
   { id: 'tradeHistory', label: 'Trade History' },
   { id: 'orderHistory', label: 'Order History' },
-  { id: 'fundingHistory', label: 'Funding History' },
 ];
 
 function EmptyState({ icon, message }: { icon: React.ReactNode; message: string }) {
@@ -64,7 +64,6 @@ export default function OrdersTables({
     openOrders: openOrders.length,
     tradeHistory: fills.length,
     orderHistory: orders.length,
-    fundingHistory: 0,
   };
 
   const marketFor = (symbol: string) => markets.find((m) => m.symbol === symbol);
@@ -79,10 +78,12 @@ export default function OrdersTables({
   return (
     <div className="bg-[#101015] border-t border-[#25252e] terminal-activity p-4 m-2 rounded-lg font-mono">
       <div className="flex items-center justify-between border-b border-[#25252e] pb-3 mb-4">
-        <div className="flex items-center space-x-6 text-xs font-bold text-gray-400">
+        {/* R3: одна строка с горизонтальной прокруткой (стили в блоке U4 globals.css) */}
+        <div className="terminal-tabs flex items-center space-x-6 text-xs font-bold text-gray-400">
           {TABS.map((tab) => (
             <button
               key={tab.id}
+              type="button"
               onClick={() => setActiveTab(tab.id)}
               className={`pb-3 -mb-3 border-b-2 transition-colors ${
                 activeTab === tab.id ? 'border-[#8ff0cc] text-white' : 'border-transparent hover:text-white'
@@ -137,6 +138,7 @@ export default function OrdersTables({
                       <td className="py-3 px-4 text-cyan-400 font-bold">{ord.status}</td>
                       <td className="py-3 px-4 text-right">
                         <button
+                          type="button"
                           onClick={() => onCancelOrder(ord.id)}
                           className="px-3 py-1 bg-[#ef8390]/10 hover:bg-[#ef8390]/20 border border-[#ef8390]/30 text-[#ef8390] font-bold rounded text-[11px]"
                         >
@@ -226,7 +228,11 @@ export default function OrdersTables({
                       <td className="py-3 px-4">{fmtQty(ord.size, ord.symbol)}</td>
                       <td className="py-3 px-4">
                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                          ord.status === 'FILLED' ? 'bg-[#8ff0cc]/10 text-[#8ff0cc]' : ord.status === 'CANCELLED' ? 'bg-[#ef8390]/10 text-[#ef8390]' : 'bg-cyan-950/40 text-cyan-400'
+                          ord.status === 'FILLED'
+                            ? 'bg-[#8ff0cc]/10 text-[#8ff0cc]'
+                            : ord.status === 'CANCELLED'
+                              ? 'bg-[#ef8390]/10 text-[#ef8390]'
+                              : 'bg-cyan-950/40 text-cyan-400'
                         }`}>
                           {ord.status}
                         </span>
@@ -240,10 +246,6 @@ export default function OrdersTables({
         </div>
       )}
 
-      {/* TAB 5: FUNDING HISTORY — показывается, когда движок учёта начнёт записывать события. */}
-      {activeTab === 'fundingHistory' && (
-        <EmptyState icon={<Clock className="w-8 h-8 text-gray-600" />} message="Funding accounting is not available yet" />
-      )}
     </div>
   );
 }

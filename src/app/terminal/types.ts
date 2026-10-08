@@ -31,6 +31,8 @@ export interface PositionRow {
   quantity: number | string;
   leverage: number;
   liquidationPrice: number | string;
+  /** notional / leverage на момент открытия — нужен для доступной маржи (M4). */
+  margin?: number | string;
 }
 
 export interface OrderRow {
@@ -58,6 +60,7 @@ export interface FillRow {
 export interface AccountPayload {
   account?: {
     id: string;
+    status?: string;
     currentEquity?: number | string | null;
     positions: PositionRow[];
     orders: OrderRow[];
