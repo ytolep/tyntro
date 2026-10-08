@@ -20,9 +20,8 @@ import { withAccountLock } from '../../lib/db/lock';
 // с плечом выше правил (equity 9 685 > maintenance 7 500 → ликвидации нет).
 // На FUNDED_SIM-счетах это реальные деньги в выплатах.
 //
-// Тест ПАДАЕТ на текущем коде (ожидаем отказ в исполнении, получаем филл) —
-// помечен skip, чтобы ворота оставались зелёными. Снять skip после
-// исправления (см. docs/REVIEW.md, M1).
+// Skip снят после исправления M1 (docs/REVIEW.md): воркер проверяет маржу
+// той же функцией execution/margin, лимит отменяется с RiskEvent.
 
 if (!process.env.DATABASE_URL?.includes('props_test'))
   throw new Error('Refusing to run: DATABASE_URL must point at props_test (see .env.test)');
@@ -77,7 +76,7 @@ before(async () => {
 
 after(async () => { await db?.$disconnect(); });
 
-test.skip('worker must not fill a standing limit order whose margin exceeds equity', async () => {
+test('worker must not fill a standing limit order whose margin exceeds equity', async () => {
   const acc = await db.tradingAccount.create({
     data: {
       userId, challengeId,
@@ -99,15 +98,20 @@ test.skip('worker must not fill a standing limit order whose margin exceeds equi
 
   await runRiskTick(deps());
 
-  // Желаемое поведение: ордер не исполнен (или отклонён), счёт не зашёл в маржу.
+  // Исправление M1: маржи не хватает → ордер CANCELLED с RiskEvent, филла нет.
   const after = await db.order.findUniqueOrThrow({ where: { id: order.id } });
-  assert.equal(after.status, 'OPEN', 'лимит с margin > equity не должен исполняться воркером');
+  assert.equal(after.status, 'CANCELLED', 'лимит с margin > equity отменяется воркером');
   assert.equal(await db.fill.count({ where: { accountId: acc.id } }), 0);
   assert.equal(await db.position.count({ where: { accountId: acc.id, status: 'OPEN' } }), 0);
+
+  const events = await db.riskEvent.findMany({ where: { accountId: acc.id } });
+  assert.equal(events.length, 1);
+  assert.equal(events[0].ruleName, 'INSUFFICIENT_MARGIN');
 
   const account = await db.tradingAccount.findUniqueOrThrow({ where: { id: acc.id } });
   assert.ok(
     (account.currentBalance as Decimal).eq(START) && (account.currentEquity as Decimal).eq(START),
     'счёт не меняется без исполнения',
   );
+  assert.equal(account.status, 'ACTIVE');
 });
