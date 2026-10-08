@@ -1,19 +1,18 @@
 'use client';
 import { activeAccountUrl } from '@/lib/activeAccount';
-import AccountModeNotice, { FundedWorkspace } from '@/components/AccountModeNotice';
+import { num, usd } from '@/lib/display';
+import { FundedWorkspace } from '@/components/AccountModeNotice';
 
 import React, { useEffect, useState } from 'react';
-import { 
-  ShieldCheck, 
-  ShieldAlert, 
-  Clock, 
-  Scale, 
-  AlertTriangle, 
-  CheckCircle2, 
-  RefreshCw,
-  Activity
+import {
+  ShieldCheck,
+  Clock,
+  Activity,
+  RefreshCw
 } from 'lucide-react';
 
+// Данные из /api/accounts/active: riskEval может быть null, пока движок риска
+// не вернул оценку — тогда показываем пустые значения вместо краха страницы.
 export default function RiskPage() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -38,6 +37,8 @@ export default function RiskPage() {
 
   if (data.execution?.provider !== 'SIMULATOR') return <FundedWorkspace/>;
   const { account, riskEval } = data;
+  const maxDdPct = account.challenge?.maxDdPct;
+  const dailyDdPct = account.challenge?.dailyDdPct;
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 font-mono space-y-8">
@@ -57,7 +58,9 @@ export default function RiskPage() {
         <div className="flex items-center space-x-4">
           <div className="bg-[#19191f] p-3 rounded-xl border border-surface-border text-right">
             <span className="text-[10px] text-gray-400 block">CURRENT RISK LEVEL</span>
-            <span className="text-base font-extrabold text-profit uppercase">{riskEval.riskLevel}</span>
+            <span className={`text-base font-extrabold uppercase ${riskEval?.riskLevel === 'FAILED' ? 'text-loss' : 'text-profit'}`}>
+              {riskEval?.riskLevel ?? '—'}
+            </span>
           </div>
         </div>
       </div>
@@ -74,25 +77,29 @@ export default function RiskPage() {
           </div>
 
           <p className="text-xs text-gray-400 font-sans leading-relaxed">
-            Your maximum drawdown floor is anchored strictly to your initial account size (${account.accountSize.toLocaleString()}) and <strong>NEVER moves upwards</strong> with open or realized profits.
+            Your maximum drawdown floor is anchored strictly to your initial account size ({usd(num(account.accountSize))}) and <strong>NEVER moves upwards</strong> with open or realized profits.
           </p>
 
           <div className="bg-[#101015] p-4 rounded-xl border border-surface-border space-y-3 text-xs">
             <div className="flex justify-between">
               <span className="text-gray-400">INITIAL ACCOUNT CAPITAL</span>
-              <span className="font-bold text-white">${account.accountSize.toLocaleString()}</span>
+              <span className="font-bold text-white">{usd(num(account.accountSize))}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-gray-400">CURRENT EQUITY</span>
-              <span className="font-bold text-white">${account.currentEquity.toLocaleString()}</span>
+              <span className="font-bold text-white">{usd(num(account.currentEquity))}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-gray-400">STATIC HARD FAILURE FLOOR</span>
-              <span className="font-bold text-profit">${riskEval.staticFloor.toLocaleString()} (6% Max DD)</span>
+              <span className="font-bold text-profit">
+                {riskEval ? `${usd(num(riskEval.staticFloor))} (${maxDdPct}% Max DD)` : '—'}
+              </span>
             </div>
             <div className="flex justify-between border-t border-surface-border/60 pt-2">
               <span className="text-gray-400">SAFETY CUSHION DISTANCE</span>
-              <span className="font-bold text-profit">+{riskEval.staticDdDistancePct.toFixed(2)}% Safe</span>
+              <span className="font-bold text-profit">
+                {riskEval ? `+${riskEval.staticDdDistancePct.toFixed(2)}% Safe` : '—'}
+              </span>
             </div>
           </div>
         </div>
@@ -103,7 +110,9 @@ export default function RiskPage() {
             <h3 className="text-base font-bold text-white flex items-center gap-2">
               <Clock className="w-5 h-5 text-cyanAccent" /> Daily Drawdown (00:00 UTC Reset)
             </h3>
-            <span className="text-xs font-bold text-cyanAccent bg-cyanAccent/10 px-2.5 py-0.5 rounded">3% DAILY LIMIT</span>
+            <span className="text-xs font-bold text-cyanAccent bg-cyanAccent/10 px-2.5 py-0.5 rounded">
+              {dailyDdPct ?? '—'}% DAILY LIMIT
+            </span>
           </div>
 
           <p className="text-xs text-gray-400 font-sans leading-relaxed">
@@ -113,15 +122,19 @@ export default function RiskPage() {
           <div className="bg-[#101015] p-4 rounded-xl border border-surface-border space-y-3 text-xs">
             <div className="flex justify-between">
               <span className="text-gray-400">DAY-START EQUITY (00:00 UTC)</span>
-              <span className="font-bold text-white">${account.dayStartEquity.toLocaleString()}</span>
+              <span className="font-bold text-white">{usd(num(account.dayStartEquity))}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-400">TODAY'S DAILY FAILURE FLOOR</span>
-              <span className="font-bold text-cyanAccent">${riskEval.dailyFloor.toLocaleString()}</span>
+              <span className="text-gray-400">TODAY&apos;S DAILY FAILURE FLOOR</span>
+              <span className="font-bold text-cyanAccent">
+                {riskEval ? usd(num(riskEval.dailyFloor)) : '—'}
+              </span>
             </div>
             <div className="flex justify-between border-t border-surface-border/60 pt-2">
               <span className="text-gray-400">DAILY LOSS BUFFER</span>
-              <span className="font-bold text-cyanAccent">+{riskEval.dailyDdDistancePct.toFixed(2)}% Remaining</span>
+              <span className="font-bold text-cyanAccent">
+                {riskEval ? `+${riskEval.dailyDdDistancePct.toFixed(2)}% Remaining` : '—'}
+              </span>
             </div>
           </div>
         </div>
