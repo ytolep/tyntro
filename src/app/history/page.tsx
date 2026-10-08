@@ -1,5 +1,6 @@
 'use client';
 import { activeAccountUrl } from '@/lib/activeAccount';
+import { num, usd } from '@/lib/display';
 import AccountModeNotice, { FundedWorkspace } from '@/components/AccountModeNotice';
 
 import React, { useEffect, useState } from 'react';
@@ -78,9 +79,9 @@ export default function HistoryPage() {
                       </span>
                     </td>
                     <td className="py-3.5 px-4 text-gray-300">{ord.type}</td>
-                    <td className="py-3.5 px-4 font-bold">${ord.price.toLocaleString()}</td>
-                    <td className="py-3.5 px-4">${ord.size.toLocaleString()}</td>
-                    <td className="py-3.5 px-4 text-cyanAccent font-bold">{ord.leverage}×</td>
+                    <td className="py-3.5 px-4 font-bold">{usd(num(ord.price))}</td>
+                    <td className="py-3.5 px-4">{usd(num(ord.size))}</td>
+                    <td className="py-3.5 px-4 text-cyanAccent font-bold">{num(ord.leverage)}×</td>
                     <td className="py-3.5 px-4">
                       <span className="text-profit font-bold">{ord.status}</span>
                     </td>
