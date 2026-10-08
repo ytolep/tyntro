@@ -2,6 +2,7 @@ import { Prisma, PrismaClient } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import type { D } from '../lib/core/money';
 import { applyFill } from '../lib/core/position';
+import { checkMargin } from '../lib/execution/margin';
 import type { ApplyFillResult, FillInput, PositionState, Side } from '../lib/core/position';
 import { evaluateAccount } from '../lib/core/risk';
 import type { BreachType, EvaluateAccountInput, RiskEvaluation } from '../lib/core/risk';
@@ -10,7 +11,7 @@ import type { MarketSnapshot } from '../lib/marketData/types';
 import { withAccountLock } from '../lib/db/lock';
 import { db } from '../lib/db';
 import { jsonLog } from './log';
-import { FALLBACK_TAKER_FEE, takerFeeOf } from '../lib/marketData/markets';
+import { takerFeeOf } from '../lib/marketData/markets';
 import { resolveMarket } from '../lib/marketData/catalog';
 import type { LogFn } from './log';
 
@@ -18,9 +19,6 @@ import type { LogFn } from './log';
 const MAINTENANCE_RATIO = 0.5;
 /** EquitySnapshot пишется не чаще раза в минуту на счёт. */
 const SNAPSHOT_MIN_INTERVAL_MS = 60_000;
-// ponytail: запасная taker-комиссия, если каталог Phoenix недоступен или без поля
-// (в каталоге поле есть — см. parsePhoenixMarkets/takerFeeOf в marketData/markets).
-const DEFAULT_TAKER_FEE = new Decimal(FALLBACK_TAKER_FEE);
 
 export interface RiskTickDeps {
   db: PrismaClient;
@@ -175,6 +173,25 @@ async function processAccount(deps: RiskTickDeps, accountId: string, marks: Map<
         leverage: order.leverage,
         feeRate: await deps.feeRate(order.symbol),
       });
+      // M1 (docs/REVIEW.md): та же проверка маржи, что у API (execution/margin).
+      // Пробный филл выводит Σ маржи за equity → ордер CANCELLED с RiskEvent.
+      const trial = new Map(posState);
+      if (result.position) trial.set(order.symbol, result.position);
+      else trial.delete(order.symbol);
+      const margin = checkMargin(balance.plus(result.realizedPnl).minus(result.fee), trial, marks);
+      if (!margin.ok) {
+        await tx.order.update({ where: { id: order.id }, data: { status: 'CANCELLED' } });
+        await tx.riskEvent.create({
+          data: {
+            accountId,
+            level: 'WARNING',
+            ruleName: 'INSUFFICIENT_MARGIN',
+            description: `INSUFFICIENT_MARGIN: лимитный ордер отменён при исполнении — требуемая маржа ${margin.marginSum.toFixed(2)} выше equity ${margin.equity.toFixed(2)}`,
+          },
+        });
+        deps.log('warn', 'лимит отменён: маржа выше equity', { accountId, orderId: order.id, symbol: order.symbol });
+        continue;
+      }
       const fill = await tx.fill.create({
         data: {
           orderId: order.id,

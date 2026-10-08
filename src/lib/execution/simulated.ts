@@ -3,7 +3,7 @@ import { db } from '../db';
 import { withAccountLock } from '../db/lock';
 import type { AuthUser } from '../auth';
 import { d, D, roundDownToStep } from '../core/money';
-import { applyFill, unrealizedPnl } from '../core/position';
+import { applyFill } from '../core/position';
 import type { PositionState, Side } from '../core/position';
 import { evaluateAccount } from '../core/risk';
 import type { RiskEvaluation } from '../core/risk';
@@ -12,6 +12,7 @@ import { getMarketSnapshot, MarketDataError } from '../marketData/server';
 import { takerFeeOf } from '../marketData/markets';
 import type { Market, MarketSnapshot } from '../marketData/types';
 import { assertSimulationAction, ExecutionError, executionPolicy } from './policy';
+import { checkMargin, requireMark } from './margin';
 
 /**
  * Симулированное исполнение на ядре core/* (план §2): тонкий слой
@@ -133,7 +134,6 @@ async function openPosition(
     throw new ExecutionError('ORDER_TOO_SMALL', 'Order size is below one lot of the market', 400);
 
   const feeRate = d(takerFeeOf(market));
-  const marks = await marksForAccount(account.id, market.symbol, mark, deps);
 
   return withAccountLock(account.id, async (tx) => {
     const replay = await replayIfDuplicate(tx, account.id, idempotencyKey);
@@ -155,6 +155,10 @@ async function openPosition(
         message: `Limit order placed at $${limitPrice.toString()}. Pending market trigger.`,
       };
     }
+
+    // M3 (docs/REVIEW.md): метки читаем ПОСЛЕ лока по свежим позициям счёта —
+    // между предзагрузкой и локом воркер мог открыть/закрыть другой символ.
+    const marks = await marksForAccount(acc.positions.map((p) => p.symbol), market.symbol, mark, deps);
 
     return fillAndSettle(tx, acc, {
       symbol: market.symbol, side, quantity, price: mark, leverage, feeRate,
@@ -186,7 +190,6 @@ async function closePosition(
     throw new ExecutionError('MARKET_NOT_SUPPORTED', 'Position instrument is not supported for execution', 400);
 
   const mark = snapshotMark(await deps.getMarketSnapshot(market.symbol));
-  const marks = await marksForAccount(account.id, market.symbol, mark, deps);
   const feeRate = d(takerFeeOf(market));
   const idempotencyKey = strField(body.idempotencyKey) ?? undefined;
 
@@ -202,6 +205,8 @@ async function closePosition(
     const fresh = await tx.position.findUnique({ where: { id: positionId } });
     if (!fresh || fresh.accountId !== account.id || fresh.status !== 'OPEN')
       throw new ExecutionError('POSITION_NOT_OPEN', 'Position is not open on this account', 409);
+    // M3 (docs/REVIEW.md): метки — по свежим позициям ПОСЛЕ лока.
+    const marks = await marksForAccount(acc.positions.map((p) => p.symbol), fresh.symbol, mark, deps);
 
     const closeSide: Side = fresh.side === 'LONG' ? 'SHORT' : 'LONG';
     return fillAndSettle(tx, acc, {
@@ -285,16 +290,12 @@ async function fillAndSettle(
   let balance = (acc.currentBalance as D).plus(result.realizedPnl).minus(result.fee);
 
   if (meta.checkMargin) {
-    let marginSum = ZERO;
-    let equity = balance;
-    for (const [symbol, pos] of states) {
-      marginSum = marginSum.plus(pos.margin);
-      equity = equity.plus(unrealizedPnl(pos, requireMark(marks, symbol)));
-    }
-    if (marginSum.gt(equity))
+    // M1/L2 (docs/REVIEW.md): общая с воркером проверка — Σ маржи по текущим меткам не выше equity.
+    const margin = checkMargin(balance, states, marks);
+    if (!margin.ok)
       throw new ExecutionError(
         'INSUFFICIENT_MARGIN',
-        `Required margin $${marginSum.toFixed(2)} exceeds equity $${equity.toFixed(2)}`,
+        `Required margin $${margin.marginSum.toFixed(2)} exceeds equity $${margin.equity.toFixed(2)}`,
         409,
       );
   }
@@ -373,8 +374,9 @@ async function fillAndSettle(
     },
   });
 
-  // §5: после PASSED/FAILED новые позиции не открываются — лимитки отменяем.
-  if (status !== acc.status && status !== 'FAILED')
+  // §5 + L1 (docs/REVIEW.md): после PASSED/FAILED новые позиции не открываются —
+  // отменяем открытые лимитки при любой смене статуса, тем же путём, что и воркер.
+  if (status !== acc.status)
     await tx.order.updateMany({ where: { accountId: acc.id, status: 'OPEN' }, data: { status: 'CANCELLED' } });
   if (status === 'FAILED')
     await tx.riskEvent.create({
@@ -407,27 +409,24 @@ async function loadAccount(tx: Prisma.TransactionClient, accountId: string): Pro
   return acc as AccountWithBook;
 }
 
-/** Метки всех открытых позиций счёта (вне блокировки — сеть в транзакции не держим). */
+/**
+ * Метки открытых позиций счёта. Вызывается ПОСЛЕ захвата лока по свежим
+ * позициям (M3, docs/REVIEW.md): между предзагрузкой и локом воркер мог
+ * открыть/закрыть символ — requireMark больше не падает 503.
+ */
 async function marksForAccount(
-  accountId: string,
+  positionSymbols: string[],
   tradedSymbol: string,
   tradedMark: D,
   deps: SimulatedOrderDeps,
 ): Promise<Map<string, D>> {
-  const positions = await db.position.findMany({ where: { accountId, status: 'OPEN' }, select: { symbol: true } });
   const marks = new Map<string, D>([[tradedSymbol, tradedMark]]);
-  const symbols = [...new Set(positions.map((p) => p.symbol))].filter((s) => s !== tradedSymbol);
+  const symbols = [...new Set(positionSymbols)].filter((s) => s !== tradedSymbol);
   const loads = symbols.map((symbol) =>
     deps.getMarketSnapshot(symbol).then((snapshot) => marks.set(symbol, snapshotMark(snapshot))),
   );
   await Promise.all(loads);
   return marks;
-}
-
-function requireMark(marks: Map<string, D>, symbol: string): D {
-  const mark = marks.get(symbol);
-  if (mark === undefined) throw new MarketDataError(`No mark price for ${symbol}; refusing to settle without full picture`);
-  return mark;
 }
 
 /** Повтор команды с тем же ключом: исходный ордер, новых записей нет. */

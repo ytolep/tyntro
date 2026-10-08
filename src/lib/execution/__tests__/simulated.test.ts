@@ -199,3 +199,22 @@ test('FUNDED → 503 без записей; CHECK_LIMIT_ORDERS → 400 (испо
     isExec(400, 'CHECK_LIMIT_ORDERS_REMOVED'),
   );
 });
+
+test('L1: FAILED через API-путь отменяет открытые лимитки в той же транзакции', async () => {
+  const acc = await makeAccount();
+  // 50 BTC @ 100, плечо 2 → margin 2500 ≤ equity; метка падает до 30 → закрытие = пробой static floor.
+  await executeSimulatedOrder(user, acc, openBody({ sizeUsd: 5000, leverage: 2, idempotencyKey: 'l1-open' }), deps);
+  price = 30;
+  // Стоячий лимит (mark 30 > 20) — до закрытия позиции счёт ещё ACTIVE.
+  await executeSimulatedOrder(user, acc, openBody({ orderMode: 'Limit', limitPrice: 20, sizeUsd: 100, idempotencyKey: 'l1-limit' }), deps);
+  const position = await db.position.findFirstOrThrow({ where: { accountId: acc.id, status: 'OPEN' } });
+
+  const closed = await executeSimulatedOrder(user, acc, { action: 'CLOSE_POSITION', positionId: position.id }, deps);
+
+  assert.equal(closed.status, 'FILLED');
+  const account = await db.tradingAccount.findUniqueOrThrow({ where: { id: acc.id } });
+  assert.equal(account.status, 'FAILED'); // закрытие реализовало убыток ниже static floor
+  const limit = await db.order.findFirstOrThrow({ where: { accountId: acc.id, type: 'LIMIT' } });
+  assert.equal(limit.status, 'CANCELLED', 'открытые лимитки отменяются и при FAILED');
+  assert.equal(await db.order.count({ where: { accountId: acc.id, status: 'OPEN' } }), 0);
+});
