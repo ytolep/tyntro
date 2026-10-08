@@ -1,4 +1,5 @@
 import { Connection } from '@solana/web3.js';
+import { createBlockTimeResolver } from './blockTime';
 import { resolveMarket } from './catalog';
 import { normalizeOrderBook, RawLevel } from './orderBookValidator';
 import { isFreshSnapshot, Market, MarketSnapshot, NormalizedTicker } from './types';
@@ -11,6 +12,8 @@ const rpc = new Connection(process.env.SOLANA_RPC_URL || 'https://api.mainnet-be
   commitment: 'confirmed', disableRetryOnRateLimit: true,
   fetch: (url, options) => fetch(url, { ...options, cache: 'no-store', signal: AbortSignal.timeout(8_000) }),
 });
+// M1: время блока — из кэша/оценки, RPC дёргается не чаще раза в 10 с (см. blockTime.ts).
+const resolveBlockTimeMs = createBlockTimeResolver(slot => rpc.getBlockTime(slot));
 
 export async function phoenixJson(path: string): Promise<any> {
   const response = await fetch(`${API}${path}`, { cache: 'no-store', signal: AbortSignal.timeout(8_000) });
@@ -74,9 +77,8 @@ async function loadSnapshot(market: Market): Promise<MarketSnapshot> {
       !Number.isSafeInteger(raw?.slot) || raw.slot <= 0)
     throw new MarketDataError('Invalid perpetual mark price or market identity', 502);
   const slot = Math.min(raw.slot, mark.markPrice.slot);
-  const blockTime = await rpc.getBlockTime(slot);
-  if (!blockTime) throw new MarketDataError('Cannot establish perpetual data age');
-  const timestamp = blockTime * 1000;
+  const timestamp = await resolveBlockTimeMs(slot);
+  if (timestamp == null) throw new MarketDataError('Cannot establish perpetual data age');
   const book = parsePerpBook(raw, market, timestamp);
   const ticker = emptyTicker(market, timestamp);
   ticker.markPrice = mark.markPrice.price;

@@ -30,7 +30,7 @@ function useMarketDataState() {
         if (stopped) return;
         setMarkets(list); setMarketsError(null);
         setSelectedMarket(previous => { const next = list.find(m => m.symbol === previous.symbol) || list.find(m => m.symbol === 'SOL-PERP') || list[0]; return JSON.stringify(previous) === JSON.stringify(next) ? previous : next; });
-      } catch { if (!stopped) { setMarkets([]); setSnapshot(null); setMarketsError('Phoenix market list unavailable. Retrying…'); } }
+      } catch { if (!stopped) { setMarkets([]); setMarketsError('Phoenix market list unavailable. Retrying…'); } } // M1: снапшот не стираем — он живёт, пока свеж по isFreshSnapshot
       finally { if (!stopped) { setMarketsLoading(false); timer = setTimeout(refresh, 30000); } }
     };
     void refresh();

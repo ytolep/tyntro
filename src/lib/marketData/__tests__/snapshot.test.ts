@@ -57,10 +57,25 @@ test('timeout aborts request, clears previous data and reports error',async()=>{
   await delay(20);stop();
   assert.equal(signal.aborted,true);assert.deepEqual(data,[null]);assert.deepEqual(statuses,['connecting','error']);
 });
-test('out-of-order and stale snapshots clear data',async()=>{
-  let count=0;const data:(MarketSnapshot|null)[]=[];
-  const stop=pollMarket('SOL-PERP',async()=>snapshot('SOL-PERP',++count===1?10:9),s=>data.push(s),()=>{},2,100);
-  await delay(15);stop();assert.equal(data[0]?.slot,10);assert.ok(data.slice(1).includes(null));
+test('out-of-order snapshot is rejected, previous fresh one is kept',async()=>{
+  let count=0;const data:(MarketSnapshot|null)[]=[];const statuses:string[]=[];
+  const stop=pollMarket('SOL-PERP',async()=>snapshot('SOL-PERP',++count===1?10:9),s=>data.push(s),s=>statuses.push(s),2,100);
+  await delay(15);stop();assert.equal(data[0]?.slot,10);
+  assert.equal(data[1]?.slot,10);                       // M1: прежний свежий снапшот удержан
+  assert.ok(!data.slice(1).includes(null));
+  assert.ok(statuses.includes('reconnecting'));
+});
+test('single failed poll keeps the last fresh snapshot, then clears it once stale',async()=>{
+  const s=snapshot('SOL-PERP',10);const data:(MarketSnapshot|null)[]=[];const statuses:string[]=[];
+  let fail=false;
+  const stop=pollMarket('SOL-PERP',async()=>{if(fail)throw new Error('network');return s;},v=>data.push(v),v=>statuses.push(v),2,100);
+  await delay(6);fail=true;await delay(6);              // одиночная ошибка: снапшот держим
+  s.sourceTimestamp=Date.now()-31_000;s.receivedAt=Date.now()-31_000;  // снапшоту больше 30 с
+  await delay(25);stop();
+  assert.equal(data[0]?.slot,10);                       // успех
+  assert.equal(data[1]?.slot,10);                       // ошибка: свежий удержан, статус reconnecting
+  assert.equal(data[data.length-1],null);               // после 30 с — прочерк
+  assert.ok(statuses.includes('connected')&&statuses.includes('reconnecting')&&statuses.includes('error'));
 });
 
 test('terminal opens the Phoenix perpetual book explicitly, without relabelling spot', () => {
