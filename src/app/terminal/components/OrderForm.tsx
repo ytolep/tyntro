@@ -1,6 +1,8 @@
 'use client';
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
+import { useAuth } from '@/lib/auth/AuthContext';
 import type { Market } from '@/lib/marketData/types';
 import type { OrderIntent } from '../types';
 
@@ -8,33 +10,43 @@ interface OrderFormProps {
   selectedMarket: Market;
   currentMarkPrice: number;
   bookMidPrice: number;
-  equity: number | null;
+  /** M4: доступная маржа = equity − Σ margin открытых позиций; null — счёта нет. */
+  availableMargin: number | null;
   canTrade: boolean;
+  /** A3: API счёта уже ответил (даже если счёта нет — это «нет счёта», не загрузка). */
+  accountLoaded: boolean;
+  accountStatus: string | null;
   marketsError: string | null;
   hasSnapshot: boolean;
   executing: boolean;
   onSubmit: (order: OrderIntent) => void;
 }
 
+type MainAction = { label: string; tone: 'neutral' | 'primary'; disabled: boolean; href?: string; needsSignIn?: boolean };
+
 export default function OrderForm({
   selectedMarket,
   currentMarkPrice,
   bookMidPrice,
-  equity,
+  availableMargin,
   canTrade,
+  accountLoaded,
+  accountStatus,
   marketsError,
   hasSnapshot,
   executing,
   onSubmit,
 }: OrderFormProps) {
+  const { user, signIn, signingIn } = useAuth();
   const [orderMode, setOrderMode] = useState<'Market' | 'Limit'>('Limit');
   const [side, setSide] = useState<'LONG' | 'SHORT'>('LONG');
   const [limitPrice, setLimitPrice] = useState<number>(0);
   const [limitPriceEdited, setLimitPriceEdited] = useState<boolean>(false);
   const [sizeUsd, setSizeUsd] = useState<number>(2000);
   const [leverage, setLeverage] = useState<number>(3);
-  const [reduceOnly] = useState<boolean>(false);
-  const [tpSl] = useState<boolean>(false);
+
+  // M3: без свежей цены форма заблокирована, расчётные поля — прочерк.
+  const hasPrice = hasSnapshot && currentMarkPrice > 0;
 
   useEffect(() => { setLimitPrice(0); setLimitPriceEdited(false); }, [selectedMarket.symbol]);
   useEffect(() => {
@@ -66,12 +78,47 @@ export default function OrderForm({
     : 0;
 
   const qtyDigits = selectedMarket.quantityDecimals ?? 6;
-  const sizeQuickButtons = equity !== null && equity > 0
+  // M4: быстрые кнопки — доля доступной маржи с текущим плечом; без счёта скрыты.
+  const sizeQuickButtons = availableMargin !== null && availableMargin > 0
     ? ([25, 50, 75, 100] as const).map((p) => ({
         pct: p,
-        usd: Math.max(0, Math.floor((equity * p) / 100)),
+        usd: Math.max(0, Math.floor((availableMargin * leverage * p) / 100)),
       }))
     : [];
+
+  // A3: главная кнопка отражает состояние входа и счёта; текст всегда короткий.
+  // null — обычная торговая кнопка ниже.
+  let mainAction: MainAction | null = null;
+  if (user === undefined) mainAction = { label: 'Loading…', tone: 'neutral', disabled: true };
+  else if (user === null) mainAction = { label: signingIn ? 'Check your wallet…' : 'Connect wallet', tone: 'primary', disabled: signingIn, needsSignIn: true };
+  else if (!accountLoaded) mainAction = { label: 'Loading account…', tone: 'neutral', disabled: true };
+  else if (accountStatus === null) mainAction = { label: 'Get a challenge', tone: 'primary', disabled: false, href: '/challenges' };
+  else if (accountStatus === 'PASSED') mainAction = { label: 'Challenge passed', tone: 'neutral', disabled: true };
+  else if (accountStatus === 'FAILED') mainAction = { label: 'Challenge failed', tone: 'neutral', disabled: true };
+
+  const tradeDisabled = executing || !canTrade || !hasPrice || selectedMarket.type === 'spot' || selectedMarket.status !== 'active' || !(sizeUsd > 0);
+  const tradeLabel = marketsError
+    ? 'Market list unavailable'
+    : selectedMarket.status !== 'active'
+      ? `Market ${selectedMarket.status}`
+      : !canTrade
+        ? 'Trading unavailable'
+        : selectedMarket.type === 'spot'
+          ? 'Spot: data only'
+          : !hasPrice
+            ? 'Waiting for market price'
+            : `Simulate ${orderMode} ${side === 'LONG' ? 'Long' : 'Short'}`;
+
+  const ctaClass = (tone: 'neutral' | 'primary' | 'side') =>
+    `w-full py-3.5 rounded-xl font-extrabold text-sm transition-all shadow-lg flex items-center justify-center space-x-2 disabled:opacity-50 active:scale-95 ${
+      tone === 'neutral'
+        ? 'bg-[#34323f] text-white'
+        : tone === 'primary'
+          ? 'bg-[#b7a0ff] text-[#151021] hover:opacity-90'
+          : side === 'LONG'
+            ? 'bg-[#8ff0cc] text-black hover:opacity-90'
+            : 'bg-[#ef8390] text-white hover:opacity-90'
+    }`;
 
   return (
     <div className="terminal-order bg-[#101015] border border-[#25252e] rounded-lg p-4 flex flex-col justify-between font-mono text-xs h-full min-h-[490px]">
@@ -82,7 +129,8 @@ export default function OrderForm({
             <button
               key={mode}
               onClick={() => setOrderMode(mode)}
-              className={`py-1.5 rounded font-bold transition-colors ${
+              disabled={!hasPrice}
+              className={`py-1.5 rounded font-bold transition-colors disabled:opacity-50 ${
                 orderMode === mode ? 'bg-[#34323f] text-white border border-[#8ff0cc]/30' : 'text-gray-400 hover:text-white'
               }`}
             >
@@ -95,7 +143,8 @@ export default function OrderForm({
         <div className="grid grid-cols-2 gap-2 mb-5">
           <button
             onClick={() => setSide('LONG')}
-            className={`py-3 rounded-lg font-extrabold text-xs transition-all ${
+            disabled={!hasPrice}
+            className={`py-3 rounded-lg font-extrabold text-xs transition-all disabled:opacity-50 ${
               side === 'LONG'
                 ? 'bg-[#8ff0cc] text-black shadow-lg shadow-[#8ff0cc]/20'
                 : 'bg-[#19191f] text-gray-400 border border-[#292930] hover:text-white'
@@ -105,7 +154,8 @@ export default function OrderForm({
           </button>
           <button
             onClick={() => setSide('SHORT')}
-            className={`py-3 rounded-lg font-extrabold text-xs transition-all ${
+            disabled={!hasPrice}
+            className={`py-3 rounded-lg font-extrabold text-xs transition-all disabled:opacity-50 ${
               side === 'SHORT'
                 ? 'bg-[#ef8390] text-white shadow-lg shadow-[#ef8390]/20'
                 : 'bg-[#19191f] text-gray-400 border border-[#292930] hover:text-white'
@@ -115,11 +165,11 @@ export default function OrderForm({
           </button>
         </div>
 
-        {/* Available Capital */}
+        {/* Available margin (M4) */}
         <div className="flex justify-between text-gray-400 mb-4 text-[11px]">
           <span>Available to Trade</span>
           <span className="text-white font-bold">
-            {equity !== null ? `$${equity.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
+            {availableMargin !== null ? `$${availableMargin.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
           </span>
         </div>
 
@@ -134,9 +184,11 @@ export default function OrderForm({
               <span className="text-gray-500 mr-2">$</span>
               <input
                 type="number"
-                value={limitPrice}
+                value={hasPrice ? limitPrice : ''}
+                placeholder="—"
+                disabled={!hasPrice}
                 onChange={(e) => { setLimitPriceEdited(true); setLimitPrice(Number(e.target.value)); }}
-                className="w-full bg-transparent text-white font-bold focus:outline-none"
+                className="w-full bg-transparent text-white font-bold focus:outline-none disabled:opacity-50"
               />
               <span className="text-gray-400 text-[10px]">USDC</span>
             </div>
@@ -154,8 +206,9 @@ export default function OrderForm({
               type="number"
               min="0"
               value={sizeUsd}
+              disabled={!hasPrice}
               onChange={(e) => setSizeUsd(Number(e.target.value))}
-              className="w-full bg-transparent text-white font-bold focus:outline-none"
+              className="w-full bg-transparent text-white font-bold focus:outline-none disabled:opacity-50"
             />
             <span className="text-gray-400 text-[10px]">USDC</span>
           </div>
@@ -168,14 +221,17 @@ export default function OrderForm({
               max="50000"
               step="500"
               value={Math.min(Math.max(sizeUsd, 500), 50000)}
+              disabled={!hasPrice}
               onChange={(e) => setSizeUsd(Number(e.target.value))}
-              className="w-full accent-[#8ff0cc] cursor-pointer"
+              className="w-full accent-[#8ff0cc] cursor-pointer disabled:opacity-50"
             />
             {sizeQuickButtons.length > 0 && (
               <div className="flex justify-between text-[10px] text-gray-500">
                 {sizeQuickButtons.map(({ pct, usd }) => (
-                  <button key={pct} onClick={() => setSizeUsd(usd)} className={pct === 100 ? 'text-[#8ff0cc] font-bold' : ''}>
-                    {pct === 100 ? 'MAX' : `${pct}%`}
+                  <button key={pct} onClick={() => setSizeUsd(usd)} disabled={!hasPrice} className="disabled:opacity-50">
+                    <span className={pct === 100 ? 'text-[#8ff0cc] font-bold' : ''}>
+                      {pct === 100 ? 'MAX' : `${pct}%`}
+                    </span>
                   </button>
                 ))}
               </div>
@@ -195,60 +251,38 @@ export default function OrderForm({
             max="5"
             step="1"
             value={leverage}
+            disabled={!hasPrice}
             onChange={(e) => setLeverage(Number(e.target.value))}
-            className="w-full accent-[#8ff0cc] cursor-pointer"
+            className="w-full accent-[#8ff0cc] cursor-pointer disabled:opacity-50"
           />
-        </div>
-
-        {/* Checkboxes */}
-        <div className="space-y-2 mb-6 text-[11px] text-gray-300">
-          <label className="flex items-center space-x-2 cursor-pointer">
-            <input
-              type="checkbox"
-              disabled
-              checked={reduceOnly}
-              readOnly
-              className="rounded border-[#292930] bg-[#19191f] text-[#8ff0cc] focus:ring-0"
-            />
-            <span>Reduce Only · coming later</span>
-          </label>
-
-          <label className="flex items-center space-x-2 cursor-pointer">
-            <input
-              type="checkbox"
-              disabled
-              checked={tpSl}
-              readOnly
-              className="rounded border-[#292930] bg-[#19191f] text-[#8ff0cc] focus:ring-0"
-            />
-            <span>Take Profit / Stop Loss · coming later</span>
-          </label>
         </div>
       </div>
 
       {/* Action Button & Breakdown */}
       <div className="space-y-4">
-        <button
-          onClick={() => onSubmit({ side, orderMode, limitPrice, sizeUsd, leverage })}
-          disabled={executing || !canTrade || !hasSnapshot || selectedMarket.type === 'spot' || selectedMarket.status !== 'active' || !(sizeUsd > 0)}
-          className={`w-full py-3.5 rounded-xl font-extrabold text-sm transition-all shadow-lg flex items-center justify-center space-x-2 ${
-            side === 'LONG'
-              ? 'bg-[#8ff0cc] text-black hover:opacity-90 shadow-[#8ff0cc]/20'
-              : 'bg-[#ef8390] text-white hover:opacity-90 shadow-[#ef8390]/20'
-          } disabled:opacity-50 active:scale-95`}
-        >
-          {executing ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <span>{marketsError ? 'Phoenix market list unavailable' : selectedMarket.status && selectedMarket.status !== 'active' ? `Market ${selectedMarket.status}` : !canTrade ? 'Challenge trading unavailable' : selectedMarket.type === 'spot' ? 'Spot: market data only' : !hasSnapshot ? 'Waiting for fresh market data' : <>Simulate {orderMode === 'Limit' ? 'Limit' : 'Market'} {side} Order</>}</span>
-          )}
-        </button>
+        {mainAction?.href ? (
+          <Link href={mainAction.href} className={ctaClass(mainAction.tone)}>
+            <span>{mainAction.label}</span>
+          </Link>
+        ) : (
+          <button
+            onClick={mainAction?.needsSignIn ? () => void signIn() : () => onSubmit({ side, orderMode, limitPrice, sizeUsd, leverage })}
+            disabled={mainAction ? mainAction.disabled : tradeDisabled}
+            className={ctaClass(mainAction ? mainAction.tone : 'side')}
+          >
+            {!mainAction && executing ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <span>{mainAction ? mainAction.label : tradeLabel}</span>
+            )}
+          </button>
+        )}
 
-        {/* Breakdown box */}
+        {/* Breakdown box: без цены расчётные поля — прочерк, без $0.00 (M3) */}
         <div className="bg-[#19191f] p-3 rounded-lg border border-[#292930] space-y-2 text-[11px]">
           <div className="flex justify-between">
             <span className="text-gray-400">Quantity ({selectedMarket.baseAsset})</span>
-            <span className="text-white font-bold">
+            <span className={mark > 0 && qty > 0 ? 'text-white font-bold' : 'text-gray-500'}>
               {mark > 0 && qty > 0
                 ? `${qty.toLocaleString('en-US', { maximumFractionDigits: qtyDigits })} ${selectedMarket.baseAsset}`
                 : '—'}
@@ -256,28 +290,40 @@ export default function OrderForm({
           </div>
           <div className="flex justify-between">
             <span className="text-gray-400">Est. Liquidation Price</span>
-            <span className="text-[#ef8390] font-bold">${estLiqPrice.toFixed(2)}</span>
+            {hasPrice && estLiqPrice > 0 ? (
+              <span className="text-[#ef8390] font-bold">${estLiqPrice.toFixed(2)}</span>
+            ) : (
+              <span className="text-gray-500">—</span>
+            )}
           </div>
           {orderMode === 'Limit' && (
             <div className="flex justify-between">
               <span className="text-gray-400">Limit Price</span>
-              <span className="text-white">${limitPrice.toFixed(2)}</span>
+              <span className={hasPrice && limitPrice > 0 ? 'text-white' : 'text-gray-500'}>
+                {hasPrice && limitPrice > 0 ? `$${limitPrice.toFixed(2)}` : '—'}
+              </span>
             </div>
           )}
           <div className="flex justify-between">
             <span className="text-gray-400">Order Value</span>
-            <span className="text-white">${notional > 0 ? notional.toLocaleString('en-US', { maximumFractionDigits: 2 }) : '—'}</span>
+            <span className={notional > 0 ? 'text-white' : 'text-gray-500'}>
+              {notional > 0 ? `$${notional.toLocaleString('en-US', { maximumFractionDigits: 2 })}` : '—'}
+            </span>
           </div>
           <div className="flex justify-between">
             <span className="text-gray-400">Margin Required</span>
-            <span className="text-gray-200">${marginRequired > 0 ? marginRequired.toFixed(2) : '—'}</span>
+            <span className={marginRequired > 0 ? 'text-gray-200' : 'text-gray-500'}>
+              {marginRequired > 0 ? `$${marginRequired.toFixed(2)}` : '—'}
+            </span>
           </div>
           <div className="flex justify-between border-t border-[#292930] pt-1">
             <span className="text-gray-400">Fee (taker)</span>
-            {takerFee !== null && feeEst !== null ? (
+            {takerFee === null ? (
+              <span className="text-gray-500">by market</span>
+            ) : notional > 0 && feeEst !== null ? (
               <span className="text-gray-300">${feeEst.toFixed(2)} · {(takerFee * 100).toFixed(4)}%</span>
             ) : (
-              <span className="text-gray-500">by market</span>
+              <span className="text-gray-500">—</span>
             )}
           </div>
         </div>
