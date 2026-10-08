@@ -27,3 +27,33 @@
 
 /* Место под полосу прокрутки резервируется всегда: шапка не сдвигается на коротких страницах. */
 html { scrollbar-gutter: stable; }
+
+/* U1 — навигация и страницы кабинета (аудит N2/N5/M6/A2/A4/V2) */
+.menu-divider{height:1px;background:var(--line);margin:8px 4px}
+.dropdown-panel .menu-active{color:#fff}
+.account-menu .dropdown-panel{width:250px;max-height:70vh;overflow:auto}
+.mobile-nav{display:flex;flex-direction:column;gap:16px}
+.mobile-nav-group{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+.mobile-nav-label{grid-column:1/-1;font:9px ui-monospace,monospace;letter-spacing:.12em;color:var(--muted);margin:6px 14px 0}
+.page-skeleton{margin-top:30px;display:grid;gap:16px}
+.sk{display:block;border-radius:6px;background:#16121d;animation:u1-pulse 1.8s ease-in-out infinite}
+.sk-heading{height:42px;width:55%}
+.sk-line{height:14px;width:40%}
+.sk-short{width:26%}
+.sk-grid{height:150px}
+@keyframes u1-pulse{50%{opacity:.5}}
+.heading-stat{display:flex;flex-direction:column;align-items:flex-end;gap:9px;flex-shrink:0}
+.heading-stat strong{font:22px ui-monospace,monospace;letter-spacing:-.04em;color:#e9e4f2}
+.data-panel{border:1px solid #302537;border-radius:8px;background:#110e16;padding:28px;margin-top:22px}
+.table-wrap{overflow-x:auto}
+.app-table{width:100%;border-collapse:collapse;font-size:12px}
+.app-table th{text-align:left;font-size:10px;font-weight:500;letter-spacing:.08em;color:var(--muted);padding:10px 12px;border-bottom:1px solid var(--line);white-space:nowrap}
+.app-table td{padding:13px 12px;border-bottom:1px solid var(--line);color:#d9d4e2}
+.app-table tr:last-child td{border-bottom:0}
+.cell-muted{color:var(--muted)}
+.cell-strong{color:#fff}
+.app-table-empty{text-align:center;color:var(--muted);padding:34px 12px}
+.risk-note{font-size:12px;color:#9c8fa9;margin:-6px 0 22px;line-height:1.65}
+.dashboard-summary strong.score-tier{font-size:17px;letter-spacing:0}
+@media(max-width:900px){.account-menu{display:none}.heading-stat{align-items:flex-start}.data-panel{padding:20px}.app-table td,.app-table th{padding:9px 10px}}
+@media(max-width:600px){.dashboard-heading{flex-direction:column;align-items:flex-start}.sk-heading{width:80%}}
