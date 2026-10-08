@@ -1,0 +1,65 @@
+import { createPublicKey, randomBytes, verify as cryptoVerify } from 'node:crypto';
+import bs58 from 'bs58';
+
+// SIWS-сообщение (по мотивам CAIP-122): домен, кошелёк, nonce, время выдачи.
+export interface SiwsParams {
+  domain: string;
+  wallet: string; // base58-адрес (публичный ключ ed25519)
+  nonce: string;
+  issuedAt: string; // ISO
+}
+
+export function newNonce(): string {
+  return randomBytes(16).toString('base64url');
+}
+
+export function createSiwsMessage({ domain, wallet, nonce, issuedAt }: SiwsParams): string {
+  return [
+    `${domain} wants you to sign in with your Solana account:`,
+    wallet,
+    '',
+    'By signing, you authenticate with PROPS. This request will not trigger a blockchain transaction or cost any fees.',
+    '',
+    `URI: https://${domain}`,
+    'Version: 1',
+    'Chain ID: solana:mainnet',
+    `Nonce: ${nonce}`,
+    `Issued At: ${issuedAt}`,
+  ].join('\n');
+}
+
+// Из сообщения достаём nonce, чтобы найти одноразовую запись в БД.
+export function extractNonce(message: string): string | null {
+  const m = message.match(/^Nonce: (\S+)$/m);
+  return m ? m[1] : null;
+}
+
+// Префикс SPKI/DER для сырого 32-байтного публичного ключа ed25519:
+// SEQUENCE { SEQUENCE { OID 1.3.101.112 }, BIT STRING <key> }
+const ED25519_SPKI_PREFIX = Buffer.from('302a300506032b6570032100', 'hex');
+
+export function verifyEd25519(
+  message: string,
+  signatureBase58: string,
+  walletAddress: string,
+): boolean {
+  try {
+    const publicKeyRaw = bs58.decode(walletAddress); // Uint8Array(32)
+    if (publicKeyRaw.length !== 32) return false;
+    const key = createPublicKey({
+      key: Buffer.concat([ED25519_SPKI_PREFIX, Buffer.from(publicKeyRaw)]),
+      format: 'der',
+      type: 'spki',
+    });
+    const signature = bs58.decode(signatureBase58);
+    // Для ed25519 algorithm = null; подпись и сообщение — байты строки сообщения.
+    return cryptoVerify(
+      null,
+      Buffer.from(message, 'utf8'),
+      key,
+      Buffer.from(signature),
+    );
+  } catch {
+    return false;
+  }
+}
