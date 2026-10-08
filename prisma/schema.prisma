@@ -1,0 +1,238 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Роли: USER | ADMIN
+model User {
+  id            String           @id @default(uuid())
+  email         String?          @unique
+  name          String?
+  walletAddress String           @unique
+  role          String           @default("USER")
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  accounts      TradingAccount[]
+  sessions      Session[]
+  purchases     Purchase[]
+}
+
+// Одноразовый nonce для подписи входа кошельком (SIWS).
+model AuthNonce {
+  id        String    @id @default(uuid())
+  nonce     String    @unique
+  wallet    String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+model Challenge {
+  id              String           @id @default(uuid())
+  accountSize     Decimal          @db.Decimal(38, 18)
+  planType        String // SPRINT | CORE | APEX
+  profitTargetPct Float
+  dailyDdPct      Float
+  maxDdPct        Float
+  profitSplitPct  Float
+  priceUsd        Decimal          @db.Decimal(38, 18)
+  minTradingDays  Int              @default(3)
+  accounts       TradingAccount[]
+  purchases      Purchase[]
+
+  @@unique([accountSize, planType])
+}
+
+// Оплата челленджа через Solana Pay; подтверждается воркером по reference.
+model Purchase {
+  id          String           @id @default(uuid())
+  userId      String
+  user        User             @relation(fields: [userId], references: [id])
+  challengeId String
+  challenge   Challenge        @relation(fields: [challengeId], references: [id])
+  reference   String           @unique
+  amountUsdc  Decimal          @db.Decimal(38, 18)
+  status      String           @default("PENDING") // PENDING | PAID | EXPIRED
+  txSignature String?
+  accountId   String?
+  account     TradingAccount?  @relation(fields: [accountId], references: [id])
+  createdAt   DateTime         @default(now())
+}
+
+model TradingAccount {
+  id               String           @id @default(uuid())
+  userId           String
+  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  challengeId      String
+  challenge        Challenge        @relation(fields: [challengeId], references: [id])
+
+  accountSize      Decimal          @db.Decimal(38, 18)
+  // Кэш суммы проводок LedgerEntry; источник истины — ledger.
+  currentBalance   Decimal          @db.Decimal(38, 18)
+  currentEquity    Decimal          @db.Decimal(38, 18)
+  dayStartEquity   Decimal          @db.Decimal(38, 18)
+
+  staticMaxDdFloor Decimal          @db.Decimal(38, 18)
+  dailyDdFloor     Decimal          @db.Decimal(38, 18)
+
+  currentExposure  Decimal          @default(0) @db.Decimal(38, 18)
+  leverage         Float            @default(1)
+
+  mode             String           @default("CHALLENGE") // CHALLENGE = симуляция; FUNDED = реальный Phoenix, отвечает 503
+  phase            String           @default("CHALLENGE") // CHALLENGE | FUNDED_SIM
+  status           String           @default("ACTIVE") // PENDING | ACTIVE | PASSED | FAILED | RISK_REVIEW | FUNDED
+  // Хэш правил, зафиксированный при покупке; смена правил его не меняет.
+  rulesHash        String?
+  lastTradeDay     String? // YYYY-MM-DD UTC последнего торгового дня
+  tradingDaysCount Int              @default(0)
+  winCount         Int              @default(0)
+  lossCount        Int              @default(0)
+  totalTrades      Int              @default(0)
+
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  orders           Order[]
+  fills            Fill[]
+  positions        Position[]
+  equitySnapshots  EquitySnapshot[]
+  riskEvents       RiskEvent[]
+  traderScores     TraderScore[]
+  payouts          Payout[]
+  ledgerEntries    LedgerEntry[]
+  purchases        Purchase[]
+}
+
+// Баланс счёта всегда равен сумме его проводок.
+model LedgerEntry {
+  id        String         @id @default(uuid())
+  accountId String
+  account   TradingAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  type      String // FEE | PNL | FUNDING | PAYOUT | ADJUST | DEPOSIT
+  amount    Decimal        @db.Decimal(38, 18)
+  refId     String?
+  createdAt DateTime       @default(now())
+
+  @@index([accountId, createdAt])
+}
+
+model Order {
+  id             String         @id @default(uuid())
+  accountId      String
+  account        TradingAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  symbol         String // BTC-PERP, ETH-PERP, SOL-PERP
+  side           String // LONG, SHORT
+  type           String         @default("MARKET") // MARKET, LIMIT
+  price          Decimal        @db.Decimal(38, 18)
+  size           Decimal        @db.Decimal(38, 18) // В базовом активе
+  leverage       Float          @default(1)
+  status         String         @default("FILLED") // OPEN, FILLED, CANCELLED
+  // Повтор команды с тем же ключом не создаёт второй ордер.
+  idempotencyKey String?        @unique
+  createdAt      DateTime       @default(now())
+  fills          Fill[]
+}
+
+model Fill {
+  id          String         @id @default(uuid())
+  orderId     String
+  order       Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  accountId   String
+  account     TradingAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  symbol      String
+  side        String
+  price       Decimal        @db.Decimal(38, 18)
+  quantity    Decimal        @db.Decimal(38, 18) // В базовом активе
+  realizedPnl Decimal        @default(0) @db.Decimal(38, 18)
+  fee         Decimal        @default(0) @db.Decimal(38, 18)
+  createdAt   DateTime       @default(now())
+}
+
+model Position {
+  id               String         @id @default(uuid())
+  accountId        String
+  account          TradingAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  symbol           String // BTC-PERP, ETH-PERP, SOL-PERP
+  side             String // LONG, SHORT
+  entryPrice       Decimal        @db.Decimal(38, 18)
+  currentMarkPrice Decimal        @db.Decimal(38, 18)
+  // Количество в базовом активе (quantity = sizeUsd / fillPrice), не в USD.
+  quantity         Decimal        @db.Decimal(38, 18)
+  margin           Decimal        @db.Decimal(38, 18) // notional / leverage на момент открытия
+  leverage         Float          @default(1)
+  liquidationPrice Decimal        @db.Decimal(38, 18)
+  unrealizedPnl    Decimal        @default(0) @db.Decimal(38, 18)
+  status           String         @default("OPEN") // OPEN, CLOSED
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+}
+
+model EquitySnapshot {
+  id            String         @id @default(uuid())
+  accountId     String
+  account       TradingAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  balance       Decimal        @db.Decimal(38, 18)
+  equity        Decimal        @db.Decimal(38, 18)
+  dayStartEquity Decimal       @db.Decimal(38, 18)
+  pnlPct        Float
+  timestamp     DateTime       @default(now())
+}
+
+model RiskEvent {
+  id          String         @id @default(uuid())
+  accountId   String
+  account     TradingAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  level       String // SAFE, WARNING, HIGH_RISK, FAILED
+  ruleName    String // STATIC_DD, DAILY_DD, EXPOSURE, LIQUIDATION
+  description String
+  timestamp   DateTime       @default(now())
+}
+
+model TraderScore {
+  id                  String         @id @default(uuid())
+  accountId           String
+  account             TradingAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  totalScore          Float // 0 - 100
+  riskManagementScore Float // 30% weight
+  sharpeScore         Float // 25% weight
+  consistencyScore    Float // 20% weight
+  profitFactorScore   Float // 15% weight
+  edgeScore           Float // 10% weight
+  timestamp           DateTime       @default(now())
+}
+
+model Payout {
+  id          String         @id @default(uuid())
+  accountId   String
+  account     TradingAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  amountUsd   Decimal        @db.Decimal(38, 18)
+  status      String         @default("REQUESTED") // REQUESTED | APPROVED | REJECTED | PAID
+  txSignature String?
+  approvedBy  String?
+  decidedAt   DateTime?
+  timestamp   DateTime       @default(now())
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  actorId   String?
+  action    String
+  targetId  String?
+  data      Json
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}

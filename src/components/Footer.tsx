@@ -1,0 +1,6 @@
+'use client';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { ArrowUpRight } from 'lucide-react';
+import Brand from './Brand';
+export default function Footer(){const path=usePathname();if(path==='/terminal')return null;return <footer className="site-footer"><div className="site-container"><div className="footer-top"><div><Brand/><p>For the next generation<br/>of crypto traders.</p></div><div><span className="eyebrow">EXPLORE</span><Link href="/challenges">Challenges<ArrowUpRight size={13}/></Link><Link href="/terminal">Trading terminal<ArrowUpRight size={13}/></Link><Link href="/dashboard">Dashboard<ArrowUpRight size={13}/></Link></div><div><span className="eyebrow">YOUR JOURNEY</span><Link href="/risk">Risk & rules</Link><Link href="/history">Trading history</Link><Link href="/profile">Your profile</Link><Link href="/funded">Funded stage</Link></div><div className="footer-note"><span className="eyebrow">BUILT AROUND SOLANA</span><p>Real market data. Simulated evaluations. Funded accounts and payouts are under development.</p></div></div><div className="footer-bottom"><span>© 2026 PROJECT</span><span>Independent platform · not affiliated with Solana or Phoenix</span><Link href="/challenges">YOUR NEXT MOVE ↗</Link></div></div></footer>}

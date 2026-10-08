@@ -1,0 +1,47 @@
+{
+  "name": "props",
+  "version": "2.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "seed": "node --env-file=.env --import tsx prisma/seed.ts",
+    "test": "node --env-file=.env.test --import tsx --test-concurrency=1 --test \"src/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit --incremental false",
+    "worker": "tsx src/worker/index.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "6.16.2",
+    "@solana/wallet-adapter-base": "^0.9.27",
+    "@solana/wallet-adapter-react": "^0.15.39",
+    "@solana/wallet-adapter-react-ui": "^0.9.39",
+    "@solana/wallet-adapter-wallets": "^0.19.38",
+    "@solana/web3.js": "^1.98.4",
+    "bs58": "^6.0.0",
+    "clsx": "^2.1.0",
+    "framer-motion": "^11.0.8",
+    "lightweight-charts": "^5.0.9",
+    "lucide-react": "^0.344.0",
+    "next": "^14.1.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "recharts": "^2.12.2",
+    "tailwind-merge": "^2.2.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.24",
+    "@types/react": "^18.2.61",
+    "@types/react-dom": "^18.2.19",
+    "autoprefixer": "^10.4.18",
+    "postcss": "^8.4.35",
+    "prisma": "6.16.2",
+    "tailwindcss": "^3.4.1",
+    "tsx": "^4.7.1",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}
