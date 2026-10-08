@@ -1,11 +1,16 @@
 'use client';
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { Settings, RefreshCw, ShieldCheck, Clock } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { num, usd } from '@/lib/display';
+import { useAuth } from '@/lib/auth/AuthContext';
+import SignInRequired from '@/components/SignInRequired';
+import { BRAND_NAME } from '@/lib/brand';
 
 // Реальные метрики и очереди из /api/admin/metrics и /api/admin/queue (роль ADMIN).
+// Сам /admin скрыт layout'ом (404 не-админам); здесь тот же визуальный эталон, что и dashboard.
 export default function AdminPage() {
+  const { user } = useAuth();
   const [metrics, setMetrics] = useState<any>(null);
   const [queue, setQueue] = useState<any>(null);
   const [error, setError] = useState<string>('');
@@ -33,33 +38,34 @@ export default function AdminPage() {
     void load();
   }, [load]);
 
+  if (user === null) {
+    return (
+      <SignInRequired
+        title="Sign in to view the admin console"
+        text="Admin metrics and approval queues are available to administrator accounts only."
+      />
+    );
+  }
+
   if (loading) {
     return (
-      <div className="max-w-7xl mx-auto px-4 py-20 text-center font-mono text-gray-400">
-        <RefreshCw className="w-8 h-8 animate-spin text-profit mx-auto mb-4" />
-        <span>Loading platform metrics...</span>
+      <div className="site-container dashboard-page">
+        <span className="eyebrow">{BRAND_NAME} / ADMIN</span>
+        <h1 className="text-4xl mt-5">Loading platform metrics…</h1>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 font-mono space-y-6">
-        <div className="bg-[#101015] p-6 rounded-2xl border border-surface-border">
-          <h1 className="text-2xl font-extrabold text-white flex items-center gap-2">
-            <Settings className="w-6 h-6 text-profit" /> Platform Admin
-          </h1>
-        </div>
-        <div className="p-6 bg-[#19191f] border border-surface-border text-sm text-gray-300 rounded-xl">
-          {error}
-          <div className="mt-3">
-            <button
-              onClick={() => void load()}
-              className="py-2 px-4 bg-[#232329] hover:bg-[#292930] border border-surface-border text-white font-bold text-xs rounded-lg"
-            >
-              Retry
-            </button>
-          </div>
+      <div className="site-container dashboard-page">
+        <span className="eyebrow">{BRAND_NAME} / ADMIN</span>
+        <h1 className="text-4xl mt-5">Metrics unavailable.</h1>
+        <p className="text-gray-400 mt-4 max-w-xl">{error}</p>
+        <div className="flex gap-4 mt-6">
+          <button className="button-secondary" onClick={() => void load()}>
+            Retry
+          </button>
         </div>
       </div>
     );
@@ -70,95 +76,84 @@ export default function AdminPage() {
   const payoutQueue: any[] = queue?.payoutQueue ?? [];
 
   const cards = [
-    { label: 'EVALUATIONS BOUGHT', value: String(m.purchases), accent: 'text-white' },
-    { label: 'REVENUE (USDC)', value: usd(num(m.revenueUsdc)), accent: 'text-profit' },
-    { label: 'ACTIVE ACCOUNTS', value: String(m.activeAccounts), accent: 'text-white' },
+    { label: 'EVALUATIONS BOUGHT', value: String(m.purchases), note: '', accent: '' },
+    { label: 'REVENUE', value: usd(num(m.revenueUsdc)), note: 'USDC collected', accent: 'text-profit' },
+    { label: 'ACTIVE ACCOUNTS', value: String(m.activeAccounts), note: '', accent: '' },
     {
-      label: 'PASS RATE (PASSED / DECIDED)',
+      label: 'PASS RATE',
       value: m.passRatePct === null ? '—' : `${m.passRatePct.toFixed(1)}%`,
-      accent: 'text-cyanAccent',
+      note: 'passed / decided',
+      accent: '',
     },
-    { label: 'FUNDED ACCOUNTS', value: String(m.fundedAccounts), accent: 'text-white' },
+    { label: 'FUNDED ACCOUNTS', value: String(m.fundedAccounts), note: 'FUNDED_SIM phase', accent: '' },
     {
       label: 'PAYOUTS PAID',
       value: `${m.payoutsPaid.count} · ${usd(num(m.payoutsPaid.totalUsd))}`,
-      accent: 'text-white',
+      note: 'count · total USD',
+      accent: '',
     },
   ];
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 font-mono space-y-8">
-      <div className="bg-[#101015] p-6 rounded-2xl border border-surface-border flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className="site-container dashboard-page">
+      <div className="dashboard-heading">
         <div>
-          <h1 className="text-2xl font-extrabold text-white flex items-center gap-2">
-            <Settings className="w-6 h-6 text-profit" /> Platform Admin
-          </h1>
-          <p className="text-xs text-gray-400 font-sans mt-1">
-            Live platform metrics and approval queues, computed from the database.
-          </p>
+          <span className="eyebrow">{BRAND_NAME} / ADMIN</span>
+          <h1>Platform overview.</h1>
+          <p>Live platform metrics and approval queues, computed from the database.</p>
         </div>
-        <div className="flex items-center gap-3">
-          <span className="text-xs font-bold text-profit bg-profit/10 px-3 py-1 rounded border border-profit/20">
-            ADMIN ACCESS
-          </span>
-          <button
-            aria-label="Refresh admin data"
-            onClick={() => void load()}
-            className="p-2 bg-[#19191f] border border-surface-border rounded-lg text-gray-300 hover:text-white"
-          >
-            <RefreshCw className="w-4 h-4" />
-          </button>
-        </div>
+        <button className="button-secondary" onClick={() => void load()} aria-label="Refresh admin data">
+          <RefreshCw size={15} /> Refresh
+        </button>
       </div>
 
-      {/* METRICS */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+      <div className="u2-stats">
         {cards.map((card) => (
-          <div key={card.label} className="glass-panel p-4 rounded-xl border border-surface-border">
-            <span className="text-gray-400 block">{card.label}</span>
-            <span className={`text-2xl font-bold mt-1 block ${card.accent}`}>{card.value}</span>
+          <div key={card.label}>
+            <span className="eyebrow">{card.label}</span>
+            <strong className={card.accent || undefined}>{card.value}</strong>
+            {card.note ? <small>{card.note}</small> : null}
           </div>
         ))}
       </div>
 
-      {/* FUNDED APPROVAL QUEUE */}
-      <div className="glass-panel p-6 rounded-2xl border border-surface-border space-y-4">
-        <h3 className="text-base font-bold text-white flex items-center gap-2">
-          <ShieldCheck className="w-5 h-5 text-profit" /> Funded Approval Queue
-          <span className="text-xs text-gray-400 font-sans">— accounts passed, awaiting decision ({fundedQueue.length})</span>
-        </h3>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left font-mono text-xs border-collapse">
+      <section className="u2-section">
+        <div className="panel-heading">
+          <h2>Funded approval queue</h2>
+          <span>{fundedQueue.length} ACCOUNTS</span>
+        </div>
+        <div className="u2-table-wrap">
+          <table className="u2-table">
             <thead>
-              <tr className="border-b border-surface-border text-gray-400">
-                <th className="py-3 px-4">ACCOUNT</th>
-                <th className="py-3 px-4">WALLET</th>
-                <th className="py-3 px-4">PLAN</th>
-                <th className="py-3 px-4">SIZE</th>
-                <th className="py-3 px-4">TRADES</th>
-                <th className="py-3 px-4">STATUS</th>
-                <th className="py-3 px-4">UPDATED</th>
+              <tr>
+                <th>Account</th>
+                <th>Wallet</th>
+                <th>Plan</th>
+                <th>Size</th>
+                <th>Trades</th>
+                <th>Status</th>
+                <th>Updated</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-surface-border/50 text-gray-200">
+            <tbody>
               {fundedQueue.length > 0 ? (
                 fundedQueue.map((a) => (
                   <tr key={a.id}>
-                    <td className="py-3.5 px-4 font-bold text-white">#{a.id.slice(0, 8)}</td>
-                    <td className="py-3.5 px-4 text-gray-300">{a.user?.walletAddress}</td>
-                    <td className="py-3.5 px-4">{a.challenge?.planType}</td>
-                    <td className="py-3.5 px-4 font-bold">{usd(num(a.accountSize))}</td>
-                    <td className="py-3.5 px-4">{a.totalTrades}</td>
-                    <td className="py-3.5 px-4">
-                      <span className="text-profit font-bold">{a.status}</span>
+                    <td>#{a.id.slice(0, 8)}</td>
+                    <td>{a.user?.walletAddress}</td>
+                    <td>{a.challenge?.planType}</td>
+                    <td>{usd(num(a.accountSize))}</td>
+                    <td>{a.totalTrades}</td>
+                    <td>
+                      <span className="text-profit">{a.status}</span>
                       <span className="text-gray-500"> / {a.phase}</span>
                     </td>
-                    <td className="py-3.5 px-4 text-gray-400">{new Date(a.updatedAt).toLocaleString()}</td>
+                    <td>{new Date(a.updatedAt).toLocaleString()}</td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={7} className="py-8 text-center text-gray-500">
+                  <td colSpan={7} className="u2-empty-cell">
                     No passed accounts awaiting a funded decision.
                   </td>
                 </tr>
@@ -166,53 +161,52 @@ export default function AdminPage() {
             </tbody>
           </table>
         </div>
-      </div>
+      </section>
 
-      {/* PAYOUT QUEUE */}
-      <div className="glass-panel p-6 rounded-2xl border border-surface-border space-y-4">
-        <h3 className="text-base font-bold text-white flex items-center gap-2">
-          <Clock className="w-5 h-5 text-cyanAccent" /> Payout Queue
-          <span className="text-xs text-gray-400 font-sans">
-            — requested and approved payouts ({payoutQueue.length})
-          </span>
-        </h3>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left font-mono text-xs border-collapse">
+      <section className="u2-section">
+        <div className="panel-heading">
+          <h2>Payout queue</h2>
+          <span>{payoutQueue.length} PAYOUTS</span>
+        </div>
+        <div className="u2-table-wrap">
+          <table className="u2-table">
             <thead>
-              <tr className="border-b border-surface-border text-gray-400">
-                <th className="py-3 px-4">PAYOUT</th>
-                <th className="py-3 px-4">WALLET</th>
-                <th className="py-3 px-4">ACCOUNT</th>
-                <th className="py-3 px-4">AMOUNT</th>
-                <th className="py-3 px-4">STATUS</th>
-                <th className="py-3 px-4">REQUESTED</th>
+              <tr>
+                <th>Payout</th>
+                <th>Wallet</th>
+                <th>Account</th>
+                <th>Amount</th>
+                <th>Status</th>
+                <th>Requested</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-surface-border/50 text-gray-200">
+            <tbody>
               {payoutQueue.length > 0 ? (
                 payoutQueue.map((p) => (
                   <tr key={p.id}>
-                    <td className="py-3.5 px-4 font-bold text-white">#{p.id.slice(0, 8)}</td>
-                    <td className="py-3.5 px-4 text-gray-300">{p.account?.user?.walletAddress}</td>
-                    <td className="py-3.5 px-4">
+                    <td>#{p.id.slice(0, 8)}</td>
+                    <td>{p.account?.user?.walletAddress}</td>
+                    <td>
                       #{p.account?.id.slice(0, 8)} · {p.account?.challenge?.planType}
                     </td>
-                    <td className="py-3.5 px-4 font-bold text-white">{usd(num(p.amountUsd))}</td>
-                    <td className="py-3.5 px-4">
-                      <span
-                        className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                          p.status === 'APPROVED' ? 'bg-profit/10 text-profit' : 'bg-cyanAccent/10 text-cyanAccent'
-                        }`}
-                      >
-                        {p.status}
-                      </span>
+                    <td>{usd(num(p.amountUsd))}</td>
+                    <td
+                      className={
+                        p.status === 'APPROVED' || p.status === 'PAID'
+                          ? 'text-profit'
+                          : p.status === 'REJECTED'
+                            ? 'text-loss'
+                            : 'text-amber-300'
+                      }
+                    >
+                      {p.status}
                     </td>
-                    <td className="py-3.5 px-4 text-gray-400">{new Date(p.timestamp).toLocaleString()}</td>
+                    <td>{new Date(p.timestamp).toLocaleString()}</td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={6} className="py-8 text-center text-gray-500">
+                  <td colSpan={6} className="u2-empty-cell">
                     No payout requests pending.
                   </td>
                 </tr>
@@ -220,7 +214,7 @@ export default function AdminPage() {
             </tbody>
           </table>
         </div>
-      </div>
+      </section>
     </div>
   );
 }
