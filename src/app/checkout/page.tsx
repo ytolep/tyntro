@@ -2,7 +2,11 @@
 
 import React, { Suspense, useCallback, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { useConnection, useWallet } from '@solana/wallet-adapter-react';
+import { useWalletModal } from '@solana/wallet-adapter-react-ui';
+import { PublicKey, Transaction } from '@solana/web3.js';
 import { getPrice, PLAN_CONFIGS } from '@/lib/pricingConfig';
+import { associatedTokenAddress, buildUsdcTransferInstructions, parseTransferRequestUrl } from '@/lib/payments/transferTx';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -10,6 +14,7 @@ import {
   ExternalLink,
   Loader2,
   ShieldCheck,
+  Wallet,
 } from 'lucide-react';
 
 interface PurchaseInfo {
@@ -38,10 +43,24 @@ function CheckoutContent() {
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
+  const { publicKey, connected, sendTransaction } = useWallet();
+  const { connection } = useConnection();
+  const { setVisible } = useWalletModal();
+
+  const [sending, setSending] = useState(false);
+  const [payError, setPayError] = useState<string | null>(null);
+  const [txSignature, setTxSignature] = useState<string | null>(null);
+
+  const address = publicKey?.toBase58() ?? '';
+  const shortAddress = address ? `${address.slice(0, 4)}…${address.slice(-4)}` : '';
+  const explorerCluster = process.env.NEXT_PUBLIC_SOLANA_CLUSTER === 'devnet' ? '?cluster=devnet' : '';
+
   const createPurchase = useCallback(async () => {
     setStatus('LOADING');
     setError(null);
     setPurchase(null);
+    setPayError(null);
+    setTxSignature(null);
     try {
       const res = await fetch('/api/checkout/create', {
         method: 'POST',
@@ -64,6 +83,40 @@ function CheckoutContent() {
   useEffect(() => {
     void createPurchase();
   }, [createPurchase]);
+
+  // Оплата подключённым кошельком: баланс → инструкции из transferTx → отправка адаптером →
+  // confirmTransaction('confirmed'). Статус покупки дальше продолжает опрашивать эффект поллинга.
+  const payWithWallet = useCallback(async () => {
+    if (!purchase || !publicKey || sending) return;
+    setSending(true);
+    setPayError(null);
+    try {
+      const req = parseTransferRequestUrl(purchase.url);
+      const balance = await connection
+        .getTokenAccountBalance(new PublicKey(associatedTokenAddress(address, req.splToken)))
+        .catch(() => null); // нет ATA у плательщика → счета/баланса нет
+      // UX-проверка до подписи; сам перевод проверяется цепочкой и воркером.
+      if (Number(balance?.value?.uiAmountString ?? 0) < Number(req.amount)) {
+        setPayError('Not enough USDC on this network');
+        return;
+      }
+      const ixs = buildUsdcTransferInstructions({
+        payer: address,
+        recipient: req.recipient,
+        mint: req.splToken,
+        amountUi: req.amount,
+        reference: req.reference,
+      });
+      const signature = await sendTransaction(new Transaction().add(...ixs), connection);
+      await connection.confirmTransaction(signature, 'confirmed');
+      setTxSignature(signature);
+    } catch (err) {
+      const msg = `${(err as { name?: unknown })?.name ?? ''} ${(err as { message?: unknown })?.message ?? ''}`;
+      setPayError(/reject|cancel|declin/i.test(msg) ? 'Payment cancelled' : 'Payment failed — try again');
+    } finally {
+      setSending(false);
+    }
+  }, [purchase, publicKey, address, sending, connection, sendTransaction]);
 
   // Поллинг статуса, пока покупка ждёт оплаты; подтверждает воркер по reference-ключу.
   useEffect(() => {
@@ -176,19 +229,66 @@ function CheckoutContent() {
             </div>
 
             <p className="text-[11px] text-gray-500 font-sans leading-relaxed">
-              Open the payment link in a Solana wallet with USDC. The request specifies the
-              treasury address, exact amount and a unique reference key — the challenge account
-              is activated automatically once the transfer is confirmed on-chain.
+              Pay with your connected wallet below, or open the payment link in a Solana
+              wallet with USDC. The request specifies the treasury address, exact amount and
+              a unique reference key — the challenge account is activated automatically once
+              the transfer is confirmed on-chain.
             </p>
 
-            {/* QR-рендер без новой зависимости невозможен; ссылка solana: валидна по спецификации
-                Solana Pay — кошельки и мобильные камеры открывают её напрямую. */}
+            {/* Основной путь: кошелёк сам подписывает и отправляет транзакцию. */}
+            {connected && publicKey ? (
+              <button
+                onClick={() => void payWithWallet()}
+                disabled={sending}
+                className="w-full py-4 bg-gradient-to-r from-brand-600 via-profit to-brand-500 hover:opacity-90 text-black font-extrabold rounded-xl text-base transition-all flex items-center justify-center space-x-2 shadow-lg shadow-brand-500/20 disabled:opacity-60 disabled:pointer-events-none"
+              >
+                {sending ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    <span>Sending transaction…</span>
+                  </>
+                ) : (
+                  <>
+                    <Wallet className="w-5 h-5" />
+                    <span>Pay ${purchase.amount} USDC with {shortAddress}</span>
+                  </>
+                )}
+              </button>
+            ) : (
+              <button
+                onClick={() => setVisible(true)}
+                className="w-full py-4 bg-gradient-to-r from-brand-600 via-profit to-brand-500 hover:opacity-90 text-black font-extrabold rounded-xl text-base transition-all flex items-center justify-center space-x-2 shadow-lg shadow-brand-500/20"
+              >
+                <Wallet className="w-5 h-5" />
+                <span>Connect wallet</span>
+              </button>
+            )}
+
+            {payError && (
+              <div className="flex items-center gap-2 text-red-300 text-sm">
+                <AlertTriangle className="w-4 h-4 shrink-0" /> {payError}
+              </div>
+            )}
+
+            {txSignature && (
+              <a
+                href={`https://explorer.solana.com/tx/${txSignature}${explorerCluster}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-profit underline underline-offset-4 break-all"
+              >
+                Sent: {txSignature.slice(0, 24)}… — view transaction on explorer
+              </a>
+            )}
+
+            {/* Запасной путь: QR-рендер без новой зависимости невозможен; ссылка solana:
+                валидна по спецификации Solana Pay — мобильные кошельки открывают её напрямую. */}
             <a
               href={purchase.url}
-              className="w-full py-4 bg-gradient-to-r from-brand-600 via-profit to-brand-500 hover:opacity-90 text-black font-extrabold rounded-xl text-base transition-all flex items-center justify-center space-x-2 shadow-lg shadow-brand-500/20"
+              className="w-full py-3 rounded-xl border border-surface-border text-gray-300 text-sm hover:bg-white/5 transition-colors flex items-center justify-center gap-2"
             >
-              <ExternalLink className="w-5 h-5" />
-              <span>Open in wallet — pay ${purchase.amount} USDC</span>
+              <ExternalLink className="w-4 h-4" />
+              <span>Pay from mobile wallet</span>
             </a>
 
             <button
@@ -202,8 +302,9 @@ function CheckoutContent() {
             <div className="flex items-center gap-3 text-xs text-gray-500 pt-1">
               <Loader2 className="w-4 h-4 animate-spin text-profit" />
               <span>
-                Waiting for payment… reference {purchase.reference.slice(0, 8)}…
-                (expires after 30 minutes)
+                {txSignature
+                  ? 'Transaction sent — waiting for on-chain confirmation…'
+                  : <>Waiting for payment… reference {purchase.reference.slice(0, 8)}… (expires after 30 minutes)</>}
               </span>
             </div>
           </div>

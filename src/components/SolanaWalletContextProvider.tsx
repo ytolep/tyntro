@@ -2,19 +2,26 @@
 
 import React, { FC, ReactNode, useMemo } from 'react';
 import { ConnectionProvider, WalletProvider } from '@solana/wallet-adapter-react';
-import { WalletAdapterNetwork } from '@solana/wallet-adapter-base';
 import { WalletModalProvider } from '@solana/wallet-adapter-react-ui';
 import { clusterApiUrl } from '@solana/web3.js';
 
 import '@solana/wallet-adapter-react-ui/styles.css';
 
 export const SolanaWalletContextProvider: FC<{ children: ReactNode }> = ({ children }) => {
-  const network = WalletAdapterNetwork.Mainnet;
-  const endpoint = useMemo(() => clusterApiUrl(network), [network]);
+  // Сеть кошелька: свой RPC (например devnet для тестов оплаты checkout), иначе
+  // публичный кластер NEXT_PUBLIC_SOLANA_CLUSTER. Рыночные данные Phoenix
+  // не затрагиваются — они всегда ходят на mainnet по своему RPC.
+  // NEXT_PUBLIC_SOLANA_CLUSTER контролируется оператором деплоя, поэтому сужение до Cluster безопасно.
+  const endpoint = useMemo(
+    () =>
+      process.env.NEXT_PUBLIC_SOLANA_RPC_URL ||
+      clusterApiUrl((process.env.NEXT_PUBLIC_SOLANA_CLUSTER || 'mainnet-beta') as 'devnet' | 'testnet' | 'mainnet-beta'),
+    [],
+  );
 
   // Standard wallets (Phantom, Solflare, Backpack) are automatically registered
   // by standard browser extensions via Wallet Standard protocol
-  const wallets = useMemo(() => [], [network]);
+  const wallets = useMemo(() => [], []);
 
   return (
     <ConnectionProvider endpoint={endpoint}>

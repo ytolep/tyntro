@@ -19,9 +19,10 @@ import { createHmac, createPrivateKey, pbkdf2Sync, sign as ed25519Sign } from 'n
 import { PrismaClient } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import {
-  Connection, Keypair, PublicKey, SystemProgram, Transaction, TransactionInstruction, sendAndConfirmTransaction,
+  Connection, Keypair, PublicKey, Transaction, sendAndConfirmTransaction,
 } from '@solana/web3.js';
 import bs58 from 'bs58';
+import { buildUsdcTransferInstructions, parseTransferRequestUrl } from '../src/lib/payments/transferTx';
 
 const BASE_URL = process.env.BASE_URL ?? 'http://localhost:3100';
 const USDC_MINT = new PublicKey(process.env.USDC_MINT ?? '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU');
@@ -84,34 +85,16 @@ async function usdc(owner: PublicKey): Promise<Decimal> {
   return d(r?.value.uiAmountString ?? '0');
 }
 
-/** Перевод USDC по спецификации Solana Pay: transferChecked + reference read-only ключом. */
+/** Перевод USDC по спецификации Solana Pay: общий сборщик из src/lib/payments/transferTx. */
 async function payUsdc(from: Keypair, to: PublicKey, amount: Decimal, reference?: PublicKey): Promise<string> {
-  const createAta = new TransactionInstruction({
-    programId: ATA_PROGRAM, data: Buffer.from([1]), // CreateIdempotent
-    keys: [
-      { pubkey: from.publicKey, isSigner: true, isWritable: true },
-      { pubkey: ata(to), isSigner: false, isWritable: true },
-      { pubkey: to, isSigner: false, isWritable: false },
-      { pubkey: USDC_MINT, isSigner: false, isWritable: false },
-      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-      { pubkey: TOKEN, isSigner: false, isWritable: false },
-    ],
+  const ixs = buildUsdcTransferInstructions({
+    payer: from.publicKey.toBase58(),
+    recipient: to.toBase58(),
+    mint: USDC_MINT.toBase58(),
+    amountUi: amount.toFixed(),
+    reference: reference?.toBase58(),
   });
-  const data = Buffer.alloc(10);
-  data[0] = 12; // TransferChecked
-  data.writeBigUInt64LE(BigInt(amount.times(1e6).toFixed(0)), 1);
-  data[9] = 6;
-  const transfer = new TransactionInstruction({
-    programId: TOKEN, data,
-    keys: [
-      { pubkey: ata(from.publicKey), isSigner: false, isWritable: true },
-      { pubkey: USDC_MINT, isSigner: false, isWritable: false },
-      { pubkey: ata(to), isSigner: false, isWritable: true },
-      { pubkey: from.publicKey, isSigner: true, isWritable: false },
-      ...(reference ? [{ pubkey: reference, isSigner: false, isWritable: false }] : []),
-    ],
-  });
-  return sendAndConfirmTransaction(RPC, new Transaction().add(createAta, transfer), [from], { commitment: 'confirmed' });
+  return sendAndConfirmTransaction(RPC, new Transaction().add(...ixs), [from], { commitment: 'confirmed' });
 }
 
 async function login(kp: Keypair, role: string): Promise<string> {
@@ -134,7 +117,12 @@ async function adjustTo(accountId: string, target: Decimal, note: string, status
 }
 
 async function main() {
-  const S: Record<string, any> = {};
+  // Состояние сценария: заполняется шагами, последующие шаги читают с `!` (шаги идут по порядку).
+  const S: {
+    trader?: string; admin?: string; purchaseId?: string; reference?: PublicKey;
+    amount?: Decimal; paySig?: string; accountId?: string; positionId?: string;
+    fundedId?: string; payoutId?: string; payoutSig?: string;
+  } = {};
   console.log(`трейдер ${trader.publicKey.toBase58()}, казна/админ ${admin.publicKey.toBase58()}, mint ${USDC_MINT.toBase58()}`);
   const before = { trader: await usdc(trader.publicKey), admin: await usdc(admin.publicKey) };
   console.log(`     USDC до: трейдер ${before.trader}, казна ${before.admin}`);
@@ -145,15 +133,16 @@ async function main() {
   await step('покупка SPRINT $5K: PENDING и ссылка Solana Pay на казну', async () => {
     const r = await http('POST', '/api/checkout/create', { json: { accountSize: 5000, planType: 'SPRINT' }, cookie: S.trader });
     check(r.status === 200, `checkout ${r.status} ${JSON.stringify(r.body)}`);
-    const url = new URL(r.body.url.replace('solana:', 'solana://'));
-    check(url.host === admin.publicKey.toBase58(), `получатель ${url.host}`);
-    check(url.searchParams.get('spl-token') === USDC_MINT.toBase58(), 'не тот mint');
-    Object.assign(S, { purchaseId: r.body.id, reference: new PublicKey(r.body.reference), amount: d(r.body.amount) });
-    console.log(`     к оплате ${S.amount} USDC, reference ${r.body.reference}`);
+    const req = parseTransferRequestUrl(r.body.url);
+    check(req.recipient === admin.publicKey.toBase58(), `получатель ${req.recipient}`);
+    check(req.splToken === USDC_MINT.toBase58(), 'не тот mint');
+    check(req.amount === d(r.body.amount).toFixed(), 'не та сумма в ссылке');
+    Object.assign(S, { purchaseId: r.body.id, reference: new PublicKey(req.reference), amount: d(r.body.amount) });
+    console.log(`     к оплате ${S.amount} USDC, reference ${req.reference}`);
   });
 
   await step('оплата настоящей транзакцией USDC на devnet', async () => {
-    S.paySig = await payUsdc(trader, admin.publicKey, S.amount, S.reference);
+    S.paySig = await payUsdc(trader, admin.publicKey, S.amount!, S.reference);
     console.log(`     tx https://explorer.solana.com/tx/${S.paySig}?cluster=devnet`);
   });
 
@@ -164,7 +153,7 @@ async function main() {
       await new Promise((ok) => setTimeout(ok, 5000));
     }
     check(S.accountId, 'покупка не стала PAID за 2 минуты');
-    const p = await prisma.purchase.findUniqueOrThrow({ where: { id: S.purchaseId } });
+    const p = await prisma.purchase.findUniqueOrThrow({ where: { id: S.purchaseId! } });
     check(p.txSignature === S.paySig, `в покупке подпись ${p.txSignature}`);
   });
 
@@ -181,13 +170,13 @@ async function main() {
     const r = await http('POST', '/api/orders', { cookie: S.trader, json: {
       accountId: S.accountId, action: 'CLOSE_POSITION', positionId: S.positionId, idempotencyKey: Keypair.generate().publicKey.toBase58() } });
     check(r.status === 200 && r.body?.status === 'FILLED', `close ${r.status} ${JSON.stringify(r.body)}`);
-    const acc = await prisma.tradingAccount.findUniqueOrThrow({ where: { id: S.accountId } });
+    const acc = await prisma.tradingAccount.findUniqueOrThrow({ where: { id: S.accountId! } });
     console.log(`     баланс после сделки ${acc.currentBalance}`);
   });
 
   await step('[тестовый приём] PASSED проводкой ADJUST до цели', async () => {
-    const acc = await prisma.tradingAccount.findUniqueOrThrow({ where: { id: S.accountId }, include: { challenge: true } });
-    await adjustTo(S.accountId, d(5000).times(d(100).plus(d(acc.challenge.profitTargetPct))).div(100), 'passed', 'PASSED');
+    const acc = await prisma.tradingAccount.findUniqueOrThrow({ where: { id: S.accountId! }, include: { challenge: true } });
+    await adjustTo(S.accountId!, d(5000).times(d(100).plus(d(acc.challenge.profitTargetPct))).div(100), 'passed', 'PASSED');
   });
 
   await step('админ одобрил funded', async () => {
@@ -197,7 +186,7 @@ async function main() {
   });
 
   await step('[тестовый приём] прибыль на funded и запрос выплаты 1 USDC', async () => {
-    await adjustTo(S.fundedId, d(5002.5), 'funded-profit');
+    await adjustTo(S.fundedId!, d(5002.5), 'funded-profit');
     const r = await http('POST', '/api/payouts/request', { cookie: S.trader, json: { accountId: S.fundedId, amount: PAYOUT_USDC.toFixed(2) } });
     check(r.status === 200 && r.body?.status === 'REQUESTED', `request ${r.status} ${JSON.stringify(r.body)}`);
     S.payoutId = r.body.id;
@@ -213,8 +202,8 @@ async function main() {
   await step('балансы USDC на devnet сошлись с операциями', async () => {
     const after = { trader: await usdc(trader.publicKey), admin: await usdc(admin.publicKey) };
     console.log(`     USDC после: трейдер ${after.trader}, казна ${after.admin}`);
-    check(after.trader.equals(before.trader.minus(S.amount).plus(PAYOUT_USDC)), 'баланс трейдера не сходится');
-    check(after.admin.equals(before.admin.plus(S.amount).minus(PAYOUT_USDC)), 'баланс казны не сходится');
+    check(after.trader.equals(before.trader.minus(S.amount!).plus(PAYOUT_USDC)), 'баланс трейдера не сходится');
+    check(after.admin.equals(before.admin.plus(S.amount!).minus(PAYOUT_USDC)), 'баланс казны не сходится');
   });
 }
 

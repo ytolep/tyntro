@@ -4,10 +4,10 @@ import { Decimal } from '@prisma/client/runtime/library';
 // Solana Pay без @solana/pay: transfer request URL собирается вручную по спецификации
 // https://github.com/solana-labs/solana-pay/blob/master/SPEC.md#specification-transfer-request
 
-const TOKEN_PROGRAM_ID = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
-const ATA_PROGRAM_ID = 'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL';
-// ponytail: USDC всегда 6 знаков; если появятся другие токены — читать decimals из mint.
-export const USDC_DECIMALS = 6;
+// Чистые хелперы (ATA-деривация, decimals) живут в браузер-безопасном transferTx и
+// реэкспортируются здесь для серверных потребителей (воркер, тесты).
+import { associatedTokenAddress, USDC_DECIMALS, TOKEN_PROGRAM_ID } from './transferTx';
+export { associatedTokenAddress, USDC_DECIMALS } from './transferTx';
 
 export interface TransferRequestUrlParams {
   recipient: string; // base58 pubkey казны
@@ -31,18 +31,6 @@ export function buildTransferRequestUrl(p: TransferRequestUrlParams): string {
   );
 }
 
-/** ATA получателя для mint (чистая деривация, без сети). */
-export function associatedTokenAddress(owner: string, mint: string): string {
-  const [ata] = PublicKey.findProgramAddressSync(
-    [
-      new PublicKey(owner).toBuffer(),
-      new PublicKey(TOKEN_PROGRAM_ID).toBuffer(),
-      new PublicKey(mint).toBuffer(),
-    ],
-    new PublicKey(ATA_PROGRAM_ID),
-  );
-  return ata.toBase58();
-}
 
 // Минимальный структурный вид getParsedTransaction — только то, что нужно для проверки.
 export interface PaymentInstruction {

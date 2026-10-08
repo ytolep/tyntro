@@ -43,6 +43,8 @@ npm run worker                              # воркер в отдельном
 | `DATABASE_URL`    | да          | —            | Prisma (web, worker, seed, тесты) |
 | `TREASURY_WALLET` | для checkout/воркера платежей | — | `src/lib/payments/config.ts` — кошелёк приёма USDC |
 | `SOLANA_RPC_URL`  | нет         | `https://api.mainnet-beta.solana.com` | рыночные данные Phoenix, проверка оплат |
+| `NEXT_PUBLIC_SOLANA_RPC_URL` | нет | — | RPC сети кошелька в браузере (оплата checkout); devnet — для тестов оплаты |
+| `NEXT_PUBLIC_SOLANA_CLUSTER` | нет | `mainnet-beta` | кластер кошелька в браузере, если RPC не задан; Phoenix-данные не затрагивает |
 | `USDC_MINT`       | нет         | mainnet USDC `EPjFW…TDt1v` | проверка переводов (devnet-тесты подменяют) |
 | `TAKER_FEE_RATE`  | нет         | `0.0005`     | тик риска: комиссии симулятора (`src/worker/riskTick.ts`) |
 | `ADMIN_WALLET`    | нет         | —            | seed создаёт пользователя с ролью ADMIN |
