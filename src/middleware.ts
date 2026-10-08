@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { countryFromHeaders, isGeoBlocked, parseBlockedCountries } from '@/lib/security/geo';
+import { clientIp } from '@/lib/security/clientIp';
 import { RateLimiter } from '@/lib/security/rateLimit';
 
 // Список стран фиксируется на старте процесса; смена env требует рестарта.
@@ -15,9 +16,13 @@ const limiter = new RateLimiter({
 // Модуль сессий не импортируем: он тянет Prisma, которая недоступна в edge-runtime.
 const SESSION_COOKIE = 'props_session';
 
+// M2 (docs/REVIEW.md): IP только из доверенных источников, см. src/lib/security/clientIp.ts.
+// env фиксируются на старте процесса; смена требует рестарта.
+const trustedIpHeader = process.env.TRUSTED_IP_HEADER?.trim() || null;
+const trustedProxyCount = Number(process.env.TRUSTED_PROXY_COUNT) > 0 ? Number(process.env.TRUSTED_PROXY_COUNT) : 1;
+
 function clientKey(req: NextRequest): string {
-  const forwarded = req.headers.get('x-forwarded-for');
-  const ip = forwarded?.split(',')[0]?.trim() || req.headers.get('x-real-ip') || 'unknown';
+  const ip = clientIp((name) => req.headers.get(name), { trustedIpHeader, trustedProxyCount });
   return `ip:${ip}`;
 }
 
