@@ -3,43 +3,24 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useWallet } from '@solana/wallet-adapter-react';
-import bs58 from 'bs58';
 import { useWalletModal } from '@solana/wallet-adapter-react-ui';
 import { ArrowUpRight, ChevronDown, Menu, X, Wallet, Check, Copy, LogOut, LogIn } from 'lucide-react';
 import { useMarketData } from '@/lib/marketData/MarketDataStore';
 import Brand from './Brand';
+import { useAuth } from '@/lib/auth/AuthContext';
 const links = [{name:'Overview',href:'/'},{name:'Challenges',href:'/challenges'},{name:'Trade',href:'/terminal'},{name:'Dashboard',href:'/dashboard'}];
 const moreLinks = [{name:'Funded',href:'/funded'},{name:'Risk & rules',href:'/risk'},{name:'Trade history',href:'/history'},{name:'Trader score',href:'/trader-score'},{name:'Leaderboard',href:'/leaderboard'},{name:'Profile',href:'/profile'}];
 export default function Navigation() {
- const pathname=usePathname(); const {publicKey,connected,disconnect,signMessage}=useWallet(); const {setVisible}=useWalletModal();
+ const pathname=usePathname(); const {publicKey,connected,disconnect,}=useWallet(); const {setVisible}=useWalletModal();
  const {snapshot,selectedMarket,connectionStatus}=useMarketData();
  const [menu,setMenu]=useState(false),[more,setMore]=useState(false),[accountsOpen,setAccountsOpen]=useState(false),[walletOpen,setWalletOpen]=useState(false),[copied,setCopied]=useState(false);
  const [accounts,setAccounts]=useState<any[]>([]),[active,setActive]=useState<any>(null);
- const [authUser,setAuthUser]=useState<any>(null),[signingIn,setSigningIn]=useState(false);
- // Статус входа: /api/auth/me по httpOnly-cookie; сбрасывается при смене/отключении кошелька и восстанавливается, если сессия жива.
- useEffect(()=>{setAuthUser(null);fetch('/api/auth/me').then(r=>r.json()).then(j=>setAuthUser(j.user||null)).catch(()=>{});},[publicKey]);
+ const {user:authUser,signIn,signOut,signingIn}=useAuth();
  useEffect(()=>{const id=localStorage.getItem('activeAccountId');fetch(`/api/accounts/active${id?`?accountId=${encodeURIComponent(id)}`:''}`).then(r=>r.json()).then(j=>{setAccounts(j.allAccounts||[]);setActive(j.account||null);if(j.account)localStorage.setItem('activeAccountId',j.account.id)}).catch(()=>{});},[pathname]);
  useEffect(()=>{setMenu(false);setMore(false);setAccountsOpen(false);},[pathname]);
  useEffect(()=>{const close=(e:KeyboardEvent)=>{if(e.key==='Escape'){setMenu(false);setMore(false);setWalletOpen(false);setAccountsOpen(false)}};document.addEventListener('keydown',close);return()=>document.removeEventListener('keydown',close)},[]);
  const address=publicKey?.toBase58()||''; const shortAddress=address?`${address.slice(0,4)}…${address.slice(-4)}`:'';
  const copy=async()=>{await navigator.clipboard.writeText(address);setCopied(true);setTimeout(()=>setCopied(false),1800)};
- // SIWS: nonce → signMessage адаптера → verify; сессия кладётся в httpOnly-cookie.
- const signIn=async()=>{
-  if(!publicKey||!signMessage||signingIn)return;
-  setSigningIn(true);
-  try{
-   const wallet=publicKey.toBase58();
-   const nres=await fetch('/api/auth/nonce',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({wallet})});
-   const {message}=await nres.json();
-   if(!message)throw new Error('nonce failed');
-   const signature=await signMessage(new TextEncoder().encode(message));
-   const vres=await fetch('/api/auth/verify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({wallet,signature:bs58.encode(signature),message})});
-   const data=await vres.json().catch(()=>({}));
-   setAuthUser(vres.ok?data.user:null);
-  }catch{setAuthUser(null)} // отмена подписи в кошельке или ошибка сети
-  finally{setSigningIn(false)}
- };
- const signOut=async()=>{await fetch('/api/auth/logout',{method:'POST'}).catch(()=>{});setAuthUser(null)};
  // Admin-ссылка видна только ADMIN (после ответа /api/auth/me); до ответа и после выхода скрыта.
  const allMoreLinks=[...moreLinks,...(authUser?.role==='ADMIN'?[{name:'Admin',href:'/admin'}]:[])];
  const appPage=!['/','/challenges'].includes(pathname);

@@ -4,6 +4,7 @@ import Navigation from '@/components/Navigation';
 import Footer from '@/components/Footer';
 import { SolanaWalletContextProvider } from '@/components/SolanaWalletContextProvider';
 import { MarketDataProvider } from '@/lib/marketData/MarketDataStore';
+import { AuthProvider } from '@/lib/auth/AuthContext';
 
 export const metadata: Metadata = {
   title: 'PROJECT | Crypto Prop Trading Evaluation Platform',
@@ -19,11 +20,13 @@ export default function RootLayout({
     <html lang="en" className="dark">
       <body className="bg-background text-white min-h-screen flex flex-col antialiased">
         <SolanaWalletContextProvider>
+          <AuthProvider>
           <MarketDataProvider>
             <Navigation />
             <main className="flex-1">{children}</main>
             <Footer />
           </MarketDataProvider>
+          </AuthProvider>
         </SolanaWalletContextProvider>
       </body>
     </html>
