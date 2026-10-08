@@ -12,6 +12,10 @@ export interface Market {
   quoteMint?: string;
   tickSize?: number;
   lotSize?: number;
+  /** Taker-комиссия рынка (доля, не процент) из каталога Phoenix; нет поля — запасное значение takerFeeOf. */
+  takerFee?: number;
+  /** Максимальное плечо рынка из leverageTiers каталога. */
+  maxLeverage?: number;
   priceDecimals?: number;
   quantityDecimals?: number;
 }

@@ -1,13 +1,21 @@
 // Воркер (план §2): отдельный процесс, тот же код.
 //  - каждую 1 с: тик риска (лимитки, переоценка, ликвидация, floors)
+//  - каждые 15 с: проверка оплат Solana Pay (подтверждение покупок)
 //  - каждые 30 с: проверка смены торгового дня (сам ролл — в 00:00 UTC, идемпотентен)
 import { db } from '../lib/db';
 import { runRiskTick } from './riskTick';
 import { runDayRoll, DAY_ROLL_CHECK_MS } from './dayRoll';
+import { checkPendingPayments } from './payments';
+import { createSolanaRpc } from '../lib/payments/solanaPay';
 import { jsonLog } from './log';
 
 const RISK_TICK_MS = 1_000;
+export const PAYMENTS_CHECK_MS = 15_000;
 const STOP_TIMEOUT_MS = 10_000;
+
+// Реальный RPC на SOLANA_RPC_URL (публичный mainnet как запасной);
+// циклPayments идёт строго последовательно — наложения запусков нет.
+const paymentsRpc = createSolanaRpc(process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com');
 
 let running = true;
 
@@ -35,10 +43,11 @@ async function loop(name: string, intervalMs: number, step: () => Promise<unknow
 
 const loops = Promise.all([
   loop('riskTick', RISK_TICK_MS, () => runRiskTick()),
+  loop('payments', PAYMENTS_CHECK_MS, () => checkPendingPayments({ rpc: paymentsRpc })),
   loop('dayRoll', DAY_ROLL_CHECK_MS, () => runDayRoll()),
 ]);
 
-jsonLog('info', 'worker запущен', { pid: process.pid, riskTickMs: RISK_TICK_MS, dayRollCheckMs: DAY_ROLL_CHECK_MS });
+jsonLog('info', 'worker запущен', { pid: process.pid, riskTickMs: RISK_TICK_MS, paymentsCheckMs: PAYMENTS_CHECK_MS, dayRollCheckMs: DAY_ROLL_CHECK_MS });
 
 let exiting = false;
 function shutdown(signal: string): void {

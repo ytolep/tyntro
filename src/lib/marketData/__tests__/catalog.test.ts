@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parsePhoenixMarkets, findMarket } from '../markets';
+import { parsePhoenixMarkets, findMarket, takerFeeOf, FALLBACK_TAKER_FEE } from '../markets';
 import { createMarketCatalog, CATALOG_TTL_MS } from '../catalog';
 const rows = [
  {symbol:'SOL',tickSize:100,baseLotsDecimals:2,marketStatus:'active'},
@@ -38,4 +38,17 @@ test('catalogue coalesces calls, adopts additions and removals, and never uses s
 test('decimal tick conversion avoids binary rounding tails in chart price scales',()=>{
  const [m]=parsePhoenixMarkets([{symbol:'TRX',tickSize:100,baseLotsDecimals:-1,marketStatus:'active'}]);
  assert.equal(m.tickSize,0.00001);
+});
+
+test('catalogue carries takerFee and maxLeverage from Phoenix metadata with safe fallback',()=>{
+ const [fee,plain]=parsePhoenixMarkets([
+  {...rows[0],takerFee:0.00035,makerFee:0.00005,leverageTiers:[{maxLeverage:25},{maxLeverage:1}]},
+  {symbol:'DOGE',tickSize:100,baseLotsDecimals:0,marketStatus:'active'},
+ ]);
+ assert.equal(fee.takerFee,0.00035);
+ assert.equal(fee.maxLeverage,25);
+ assert.equal(plain.takerFee,undefined);
+ assert.equal(plain.maxLeverage,undefined);
+ assert.equal(takerFeeOf(plain),FALLBACK_TAKER_FEE);
+ assert.equal(takerFeeOf(undefined),FALLBACK_TAKER_FEE);
 });

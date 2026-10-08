@@ -10,15 +10,17 @@ import type { MarketSnapshot } from '../lib/marketData/types';
 import { withAccountLock } from '../lib/db/lock';
 import { db } from '../lib/db';
 import { jsonLog } from './log';
+import { FALLBACK_TAKER_FEE, takerFeeOf } from '../lib/marketData/markets';
+import { resolveMarket } from '../lib/marketData/catalog';
 import type { LogFn } from './log';
 
 /** Доля поддерживающей маржи: ликвидация при equity < Σ margin × ratio. */
 const MAINTENANCE_RATIO = 0.5;
 /** EquitySnapshot пишется не чаще раза в минуту на счёт. */
 const SNAPSHOT_MIN_INTERVAL_MS = 60_000;
-// ponytail: единая taker-комиссия константой (каталог Phoenix комиссию не отдаёт);
-// источник комиссии из каталога появится с ядром/исполнением (агент A/F).
-const DEFAULT_TAKER_FEE = new Decimal(process.env.TAKER_FEE_RATE ?? '0.0005');
+// ponytail: запасная taker-комиссия, если каталог Phoenix недоступен или без поля
+// (в каталоге поле есть — см. parsePhoenixMarkets/takerFeeOf в marketData/markets).
+const DEFAULT_TAKER_FEE = new Decimal(FALLBACK_TAKER_FEE);
 
 export interface RiskTickDeps {
   db: PrismaClient;
@@ -27,7 +29,7 @@ export interface RiskTickDeps {
   applyFill: (pos: PositionState | null, fill: FillInput) => ApplyFillResult;
   evaluateAccount: (input: EvaluateAccountInput) => RiskEvaluation;
   maintenanceRatio: number;
-  feeRate: (symbol: string) => D;
+  feeRate: (symbol: string) => D | Promise<D>;
   /** epoch ms — для троттлинга снапшотов и даты торгового дня. */
   now: () => number;
   log: LogFn;
@@ -41,7 +43,11 @@ export function defaultRiskTickDeps(): RiskTickDeps {
     applyFill,
     evaluateAccount,
     maintenanceRatio: MAINTENANCE_RATIO,
-    feeRate: () => DEFAULT_TAKER_FEE,
+    // Taker-комиссия рынка из каталога Phoenix; недоступен — запасное значение.
+    feeRate: async (symbol: string) => {
+      const market = await resolveMarket(symbol).catch(() => undefined);
+      return new Decimal(takerFeeOf(market));
+    },
     now: () => Date.now(),
     log: jsonLog,
   };
@@ -167,7 +173,7 @@ async function processAccount(deps: RiskTickDeps, accountId: string, marks: Map<
         quantity: order.size as D,
         price: order.price as D,
         leverage: order.leverage,
-        feeRate: deps.feeRate(order.symbol),
+        feeRate: await deps.feeRate(order.symbol),
       });
       const fill = await tx.fill.create({
         data: {
@@ -220,7 +226,7 @@ async function processAccount(deps: RiskTickDeps, accountId: string, marks: Map<
           quantity: pos.quantity,
           price: mark,
           leverage: pos.leverage,
-          feeRate: deps.feeRate(symbol),
+          feeRate: await deps.feeRate(symbol),
         });
         // Fill требует orderId — принудительное закрытие получает синтетический MARKET-ордер
         // с детерминированным idempotencyKey (повтор невозможен: позиция уже CLOSED).
