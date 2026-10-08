@@ -1,5 +1,5 @@
 import { db } from '@/lib/db';
-import { createSiwsMessage, newNonce } from '@/lib/auth/siws';
+import { createSiwsMessage, newNonce, siwsDomainCandidates } from '@/lib/auth/siws';
 import bs58 from 'bs58';
 
 export const dynamic = 'force-dynamic';
@@ -30,12 +30,16 @@ export async function POST(req: Request) {
   }
 
   const nonce = newNonce();
-  const issuedAt = new Date().toISOString();
-  const domain = req.headers.get('host') ?? 'props.local';
+  const domain = siwsDomainCandidates(req.headers.get('host'))[0];
 
-  await db.authNonce.create({
+  // issuedAt = createdAt записи: verify восстанавливает сообщение побайтово из записи
+  // (wallet, nonce, createdAt) и домена, поэтому выданное время нельзя брать с отдельных часов.
+  const record = await db.authNonce.create({
     data: { nonce, wallet, expiresAt: new Date(Date.now() + NONCE_TTL_MS) },
   });
 
-  return Response.json({ message: createSiwsMessage({ domain, wallet, nonce, issuedAt }), nonce });
+  return Response.json({
+    message: createSiwsMessage({ domain, wallet, nonce, issuedAt: record.createdAt.toISOString() }),
+    nonce,
+  });
 }

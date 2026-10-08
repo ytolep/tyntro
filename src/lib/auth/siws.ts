@@ -13,6 +13,30 @@ export function newNonce(): string {
   return randomBytes(16).toString('base64url');
 }
 
+// H2 (docs/REVIEW.md): домен SIWS-сообщения должен быть нашим.
+// Белый список APP_DOMAINS (CSV) фиксируется на старте процесса (как BLOCKED_COUNTRIES
+// в middleware); APP_DOMAIN — домен-фолбэк (по умолчанию первый из APP_DOMAINS).
+const APP_DOMAINS = (process.env.APP_DOMAINS ?? '')
+  .split(',')
+  .map((d) => d.trim().toLowerCase())
+  .filter(Boolean);
+const APP_DOMAIN = process.env.APP_DOMAIN?.trim().toLowerCase() || APP_DOMAINS[0];
+
+/**
+ * Домены, для которых мог быть выдан SIWS, в порядке приоритета: Host запроса,
+ * если он входит в APP_DOMAINS (без настроенного списка — Host как есть, dev/тесты),
+ * затем APP_DOMAIN; при полном отсутствии — 'props.local'.
+ */
+export function siwsDomainCandidates(host: string | null): string[] {
+  const list: string[] = [];
+  if (host && (APP_DOMAINS.length === 0 || APP_DOMAINS.includes(host.toLowerCase()))) {
+    list.push(host);
+  }
+  if (APP_DOMAIN && !list.includes(APP_DOMAIN)) list.push(APP_DOMAIN);
+  if (list.length === 0) list.push('props.local');
+  return list;
+}
+
 export function createSiwsMessage({ domain, wallet, nonce, issuedAt }: SiwsParams): string {
   return [
     `${domain} wants you to sign in with your Solana account:`,

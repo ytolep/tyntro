@@ -1,5 +1,5 @@
 import { db } from '@/lib/db';
-import { extractNonce, verifyEd25519 } from '@/lib/auth/siws';
+import { createSiwsMessage, extractNonce, siwsDomainCandidates, verifyEd25519 } from '@/lib/auth/siws';
 import { createSession, sessionCookie } from '@/lib/auth/session';
 
 export const dynamic = 'force-dynamic';
@@ -17,9 +17,9 @@ export async function POST(req: Request) {
     return Response.json({ error: 'wallet, signature and message are required' }, { status: 400 });
   }
 
-  // Сообщение должно быть нашим: nonce из него, кошелёк в нём совпадает с заявленным.
+  // Сообщение должно быть нашим: nonce из него находит одноразовую запись.
   const nonce = extractNonce(message);
-  if (!nonce || !message.includes(wallet)) {
+  if (!nonce) {
     return Response.json({ error: 'Invalid message' }, { status: 401 });
   }
 
@@ -27,6 +27,17 @@ export async function POST(req: Request) {
   const record = await db.authNonce.findUnique({ where: { nonce } });
   if (!record || record.usedAt || record.expiresAt <= new Date() || record.wallet !== wallet) {
     return Response.json({ error: 'Invalid or expired nonce' }, { status: 401 });
+  }
+
+  // H2: сообщение должно побайтово совпадать с выданным для этого nonce. Схема AuthNonce
+  // не хранит message — восстанавливаем его детерминированно из записи (wallet, nonce,
+  // createdAt) и домена-кандидата: Host ∈ APP_DOMAINS либо APP_DOMAIN (siwsDomainCandidates).
+  // Чужой домен (фишинг) и любая правка текста здесь не проходят.
+  const issuedAt = record.createdAt.toISOString();
+  const issuedMessage = siwsDomainCandidates(req.headers.get('host'))
+    .map((domain) => createSiwsMessage({ domain, wallet, nonce, issuedAt }));
+  if (!issuedMessage.includes(message)) {
+    return Response.json({ error: 'Invalid message' }, { status: 401 });
   }
 
   // Подпись ed25519 от публичного ключа-кошелька (node:crypto, SPKI/DER).

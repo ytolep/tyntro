@@ -14,9 +14,9 @@ import bs58 from 'bs58';
 // с этим nonce, жертва подписывает у себя, атакующий подставляет подпись в
 // /api/auth/verify — сессия выдаётся за кошелёк жертвы.
 //
-// Тест ПАДАЕТ на текущем коде (ожидаем 401, получаем 200 + сессию) —
-// помечен skip, чтобы ворота оставались зелёными. Снять skip после
-// исправления (см. docs/REVIEW.md, H2).
+// Исправлено (X2, docs/REVIEW.md H2): verify восстанавливает выданное сообщение
+// побайтово из записи AuthNonce и домена-кандидата (Host ∈ APP_DOMAINS / APP_DOMAIN) —
+// подпись под чужим доменом больше не проходит.
 
 if (!process.env.DATABASE_URL?.includes('props_test'))
   throw new Error('Refusing to run: DATABASE_URL must point at props_test (see .env.test)');
@@ -54,7 +54,7 @@ before(async () => {
 
 after(async () => { await db?.$disconnect(); });
 
-test.skip('SIWS message signed for a foreign domain must be rejected (domain check)', async () => {
+test('SIWS message signed for a foreign domain must be rejected (domain check)', async () => {
   // 1) Легальный nonce для кошелька жертвы (публичный эндпоинт).
   const nonceRes = await noncePOST(post('/api/auth/nonce', { wallet }));
   assert.equal(nonceRes.status, 200);
