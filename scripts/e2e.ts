@@ -1,5 +1,5 @@
 /**
- * Сквозной сценарий PROPS v2 (агент M, волна 3): вход → оплата → сделки →
+ * Сквозной сценарий Tyntro (агент M, волна 3): вход → оплата → сделки →
  * PASSED → одобрение funded → прибыль → выплата, плюс негативные проверки.
  *
  * Запускается против ПОДНЯТОГО приложения (web + worker), см. docs/E2E.md:
@@ -219,7 +219,7 @@ function seedAdmin(adminWallet: string): void {
 // ---- Сценарий ----
 
 async function main(): Promise<void> {
-  console.log(`PROPS e2e → ${BASE_URL} (база ${DATABASE_URL.replace(/:[^:@/]+@/, ':***@')})`);
+  console.log(`Tyntro e2e → ${BASE_URL} (база ${DATABASE_URL.replace(/:[^:@/]+@/, ':***@')})`);
 
   // Предполётная проверка (не шаг): приложение живо, БД отвечает, env на месте.
   const health = await http('GET', '/api/health');

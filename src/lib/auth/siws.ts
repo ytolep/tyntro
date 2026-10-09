@@ -1,5 +1,6 @@
 import { createPublicKey, randomBytes, verify as cryptoVerify } from 'node:crypto';
 import bs58 from 'bs58';
+import { BRAND_NAME } from '../brand';
 
 // SIWS-сообщение (по мотивам CAIP-122): домен, кошелёк, nonce, время выдачи.
 export interface SiwsParams {
@@ -49,7 +50,7 @@ export function createSiwsMessage({ domain, wallet, nonce, issuedAt }: SiwsParam
     `${domain} wants you to sign in with your Solana account:`,
     wallet,
     '',
-    'By signing, you authenticate with PROPS. This request will not trigger a blockchain transaction or cost any fees.',
+    `By signing, you authenticate with ${BRAND_NAME}. This request will not trigger a blockchain transaction or cost any fees.`,
     '',
     `URI: ${siwsUri(domain)}`,
     'Version: 1',

@@ -5,6 +5,7 @@ import type { Challenge } from '@prisma/client';
 import { db } from '@/lib/db';
 import { REFUNDS_VERSION, RULES_VERSION, TERMS_VERSION } from '@/lib/legal/versions';
 import { ACCOUNT_SIZES, PLAN_CONFIGS } from '@/lib/pricingConfig';
+import { BRAND_NAME } from '@/lib/brand';
 import { buildTransferRequestUrl } from './solanaPay';
 import { getPaymentsConfig } from './config';
 
@@ -97,8 +98,8 @@ export async function createPendingPurchase(
     amount: purchase.amountUsdc,
     splToken: cfg.usdcMint,
     reference: purchase.reference,
-    label: 'PROPS',
-    message: `PROPS ${plan} challenge ${accountSize}`,
+    label: BRAND_NAME,
+    message: `${BRAND_NAME} ${plan} challenge ${accountSize}`,
   });
   return { purchaseId: purchase.id, reference: purchase.reference, amount: purchase.amountUsdc, payUrl };
 }

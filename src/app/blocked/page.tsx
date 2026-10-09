@@ -1,3 +1,5 @@
+import { BRAND_NAME } from '@/lib/brand';
+
 export const metadata = { title: 'Unavailable in your region' };
 
 // Заглушка гео-блока: сюда редиректит middleware со страниц из заблокированных стран.
@@ -7,7 +9,7 @@ export default function BlockedPage() {
       <p className="eyebrow">GEO RESTRICTION</p>
       <h1 className="text-4xl font-medium tracking-tight">Unavailable in your region</h1>
       <p className="max-w-md text-sm" style={{ color: 'var(--muted)' }}>
-        PROPS does not provide services in your country or region. If you believe this is a
+        {BRAND_NAME} does not provide services in your country or region. If you believe this is a
         mistake, contact support.
       </p>
     </section>

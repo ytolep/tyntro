@@ -1,4 +1,4 @@
-# Caddy для прод-стека PROPS (deploy/docker-compose.prod.yml).
+# Caddy для прод-стека Tyntro (deploy/docker-compose.prod.yml).
 # Адрес сайта приходит из env DOMAIN (передаётся compose-файлом).
 #  - настоящий домен: автоматический HTTPS Let's Encrypt (HTTP-01 + TLS-ALPN),
 #    сертификат хранится в volume caddy_data и перевыпускается сам;

@@ -166,12 +166,12 @@ test('transfer request url matches Solana Pay spec; transferChecked with wrong a
   const reference = Keypair.generate().publicKey.toBase58();
   const url = solanaPay.buildTransferRequestUrl({
     recipient, amount: new Decimal(89), splToken, reference,
-    label: 'PROPS', message: 'PROPS CORE challenge 10000',
+    label: 'TYNTRO', message: 'TYNTRO CORE challenge 10000',
   });
   assert.equal(
     url,
     `solana:${recipient}?amount=89&spl-token=${splToken}&reference=${reference}` +
-      `&label=PROPS&message=${encodeURIComponent('PROPS CORE challenge 10000')}`,
+      `&label=TYNTRO&message=${encodeURIComponent('TYNTRO CORE challenge 10000')}`,
   );
 
   const ata = solanaPay.associatedTokenAddress(recipient, splToken);

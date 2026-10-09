@@ -79,7 +79,7 @@ test('parseTransferRequestUrl — обратная к buildTransferRequestUrl', 
     amount: new Decimal('23.00'),
     splToken: key(),
     reference: key(),
-    label: 'PROPS',
+    label: 'TYNTRO',
     message: 'Challenge checkout',
   };
   const parsed = parseTransferRequestUrl(buildTransferRequestUrl(params));
