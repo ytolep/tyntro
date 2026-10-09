@@ -2,6 +2,8 @@ import { Prisma, PrismaClient } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { db } from '../lib/db';
 import { deleteExpiredAuthRows } from '../lib/auth/cleanup';
+import { evaluateAccount } from '../lib/core/risk';
+import { notify } from '../lib/notifications';
 import { jsonLog } from './log';
 import type { LogFn } from './log';
 
@@ -71,22 +73,51 @@ export async function runDayRoll(deps: DayRollDeps = defaultDayRollDeps()): Prom
       // Свежее состояние под блокировкой: статус мог измениться после выборки.
       const acc = await tx.tradingAccount.findUnique({
         where: { id },
-        include: { challenge: true },
+        include: { challenge: true, positions: { where: { status: 'OPEN' }, select: { id: true } } },
       });
       if (!acc || acc.status !== 'ACTIVE') continue;
       count++;
 
       const equity = acc.currentEquity as Decimal;
       const floor = equity.mul(new Decimal(1).minus(new Decimal(acc.challenge.dailyDdPct).div(100)));
+      const tradingDays = acc.tradingDaysCount + (acc.lastTradeDay === completedDay ? 1 : 0);
+      // Счёт без позиций тик риска не видит: если цель достигнута и дней достаточно,
+      // PASSED засчитывается здесь, иначе трейдеру пришлось бы снова открыть сделку.
+      const passed = acc.positions.length === 0 && evaluateAccount({
+        accountSize: acc.accountSize as Decimal,
+        balance: acc.currentBalance as Decimal,
+        positions: [],
+        dayStartEquity: equity,
+        rules: {
+          maxDdPct: acc.challenge.maxDdPct,
+          dailyDdPct: acc.challenge.dailyDdPct,
+          profitTargetPct: acc.challenge.profitTargetPct,
+          minTradingDays: acc.challenge.minTradingDays,
+        },
+        tradingDays,
+        status: acc.status,
+        maintenanceRatio: 0,
+      }).passed;
       await tx.tradingAccount.update({
         where: { id },
         data: {
           dayStartEquity: equity,
           dailyDdFloor: floor,
-          // Торговый день засчитан, только если последняя сделка была в завершившийся день.
-          ...(acc.lastTradeDay === completedDay ? { tradingDaysCount: { increment: 1 } } : {}),
+          tradingDaysCount: tradingDays,
+          ...(passed ? { status: 'PASSED' } : {}),
         },
       });
+      if (passed) {
+        // §5: после PASSED новые позиции не открываются — висящие лимитки отменяем.
+        await tx.order.updateMany({ where: { accountId: id, status: 'OPEN' }, data: { status: 'CANCELLED' } });
+        await notify(tx, {
+          userId: acc.userId,
+          kind: 'ACCOUNT_PASSED',
+          title: 'Challenge passed!',
+          body: 'Profit target reached — your challenge account is PASSED. Request funded activation from the Funded page.',
+          accountId: id,
+        });
+      }
     }
     return count;
   }, { timeout: 60_000 });

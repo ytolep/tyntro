@@ -323,24 +323,35 @@ test('цель +9 % достигнута на 2-й день → ACTIVE/RISK_REVI
   assert.equal(acc.status, 'ACTIVE', 'на закрытии 3-го дня счёт ещё не PASSED');
   assert.equal(acc.tradingDaysCount, 2);
 
-  await roll('2026-11-04T00:00:30.000Z'); // 3-й день
-  acc = await account(accId);
-  assert.equal(acc.tradingDaysCount, 3);
-
-  // Первый же сеттлмент после третьего дня проходит счёт (позиций нет).
-  const pos4 = await openLong(who, ctx, '2026-11-04T10:00:00.000Z', 100);
-  assert.equal((await account(accId)).status, 'ACTIVE', 'с открытой позицией не проходит');
-  await closeLong(who, ctx, '2026-11-04T10:30:00.000Z', 100, pos4);
+  // Смена дня засчитывает 3-й торговый день и сама проходит счёт без позиций:
+  // трейдеру не нужно открывать новую сделку и рисковать результатом.
+  await roll('2026-11-04T00:00:30.000Z');
   await checkInvariants(accId, 'итог');
   acc = await account(accId);
-  assert.equal(acc.status, 'PASSED', 'после 3-го торгового дня — PASSED');
   assert.equal(acc.tradingDaysCount, 3);
+  assert.equal(acc.status, 'PASSED', 'после 3-го торгового дня — PASSED при смене дня');
   assert.equal(
     (await db.order.findUniqueOrThrow({ where: { id: limit.order.id } })).status,
     'CANCELLED',
     'лимитка отменена при PASSED',
   );
-  eqD(acc.currentBalance, '5489.75', 'итог: только комиссии после дня 2');
+  eqD(acc.currentBalance, '5492.25', 'итог: без лишней сделки и её комиссии');
+  const note = await db.notification.findFirst({ where: { accountId: accId, kind: 'ACCOUNT_PASSED' } });
+  assert.ok(note, 'уведомление о прохождении создано');
+});
+
+test('счёт без позиций не проходит при смене дня, если цель не достигнута', async () => {
+  const who = await makeTrader('flat-short');
+  const ctx = makeCtx('flat-short', '2027-01-01');
+  const accId = who.account.id;
+  for (const [day, next] of [['2027-01-01', '2027-01-02'], ['2027-01-02', '2027-01-03'], ['2027-01-03', '2027-01-04']]) {
+    const pos = await openLong(who, ctx, `${day}T10:00:00.000Z`, 100);
+    await closeLong(who, ctx, `${day}T11:00:00.000Z`, 101, pos); // +1 % в день: цель 9 % не достигнута
+    await roll(`${next}T00:00:30.000Z`);
+  }
+  const acc = await account(accId);
+  assert.equal(acc.tradingDaysCount, 3);
+  assert.equal(acc.status, 'ACTIVE', 'без достигнутой цели счёт остаётся ACTIVE');
 });
 
 // ---- Негативная ветка 2: день без сделок ----
