@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { DM_Sans } from 'next/font/google';
+import localFont from 'next/font/local';
 import './globals.css';
 import Navigation from '@/components/Navigation';
 import Footer from '@/components/Footer';
@@ -8,11 +8,12 @@ import { MarketDataProvider } from '@/lib/marketData/MarketDataStore';
 import { AuthProvider } from '@/lib/auth/AuthContext';
 import { BRAND_NAME } from '@/lib/brand';
 
-// next/font самостоятельный хостинг: шрифты отдаются с /_next/static/media,
-// в рантайме нет запросов к fonts.googleapis.com, CSP font-src 'self' достаточна.
+// DM Sans (latin, variable, OFL) лежит в репо: сборка не ходит в fonts.googleapis.com
+// (из docker он бывает недоступен), шрифт отдаётся с /_next/static/media, CSP font-src 'self' достаточна.
 // Моноширинные подписи (eyebrow и т.п.) используют системный стек ui-monospace — веб-шрифт не нужен.
-const dmSans = DM_Sans({
-  subsets: ['latin'],
+const dmSans = localFont({
+  src: './fonts/DMSans-latin.woff2',
+  weight: '100 1000',
   display: 'swap',
   variable: '--font-dm-sans',
 });
