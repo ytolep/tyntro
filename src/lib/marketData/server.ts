@@ -116,7 +116,8 @@ async function restSnapshot(market: Market): Promise<MarketSnapshot> {
   return request;
 }
 
-const STREAM_FIRST_MESSAGE_TIMEOUT_MS = 3_000;
+// allMids приходит раз в ~5 с (замер 9.10.2026): новому подключению нужно до 5 с на первый слот.
+const STREAM_FIRST_MESSAGE_TIMEOUT_MS = 6_000;
 
 export async function getMarketSnapshot(symbol: string): Promise<MarketSnapshot> {
   const market = await resolveMarket(symbol);
@@ -130,7 +131,7 @@ export async function getMarketSnapshot(symbol: string): Promise<MarketSnapshot>
     if (live) return live;
     // Пока ждали, поток упал/застрял — работает запасной REST-путь.
     if (!phoenixStream.available()) return restSnapshot(market);
-    throw new MarketDataError('Market data is stale');
+    throw new MarketDataError(`Market data is stale: ${phoenixStream.unavailableReason(market) ?? 'timeout'}`);
   }
   return restSnapshot(market);
 }

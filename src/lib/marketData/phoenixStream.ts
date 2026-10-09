@@ -3,9 +3,14 @@ import { parseOrderBookSides } from './orderBookValidator';
 
 export const PHOENIX_WS_URL = 'wss://perp-api.phoenix.trade/v1/ws';
 
-/** Свежесть fail-closed: стакан и market-сообщение должны быть получены не позже
- *  этого возраста, иначе данные считаются недоступными (не отдаём старое). */
-export const BOOK_MARKET_MAX_AGE_MS = 5_000;
+/** Свежесть fail-closed. Канал market Phoenix шлёт ~1 сообщение в секунду по каждому
+ *  рынку — это пульс: без него дольше этого времени рынок недоступен. */
+export const MARKET_MAX_AGE_MS = 5_000;
+/** Стакан Phoenix присылает только при изменении (замер 9.10.2026: спокойные рынки молчат
+ *  до 20 с), поэтому книга действует до следующего сообщения, но не дольше этого. */
+export const BOOK_MAX_AGE_MS = 30_000;
+/** Книга, середина которой разошлась с markPx сильнее этой доли, считается недостоверной. */
+export const BOOK_MARK_MAX_DEVIATION = 0.02;
 /** Slot из allMids должен продвигаться хотя бы с таким интервалом. */
 export const SLOT_ADVANCE_MAX_AGE_MS = 15_000;
 /** К символу не обращались столько — отписываемся от orderbook и market. */
@@ -265,18 +270,31 @@ export function createPhoenixStream(deps: PhoenixStreamDeps = {}) {
     /** Снапшот из памяти по правилам свежести; null — данные недоступны. */
     peek(market: Market): MarketSnapshot | null {
       const s = symbols.get(market.baseAsset);
-      if (!s?.book || !s.market || midsSlot === null || !this.available()) return null;
+      if (this.unavailableReason(market) !== null || !s?.book || !s.market || midsSlot === null) return null;
       const t = now();
-      if (t - s.bookAt > BOOK_MARKET_MAX_AGE_MS) return null;
-      if (t - s.marketAt > BOOK_MARKET_MAX_AGE_MS) return null;
-      if (t - lastSlotAdvanceAt > SLOT_ADVANCE_MAX_AGE_MS) return null;
-      const sourceTimestamp = Math.min(s.bookAt, s.marketAt);
+      // Возраст данных — по пульсу market: книга без изменений остаётся верной, пока рынок жив.
+      const sourceTimestamp = s.marketAt;
       const ticker = buildTicker(market, s.market, sourceTimestamp);
       return {
         marketId: market.symbol, market, source: 'phoenix-perp', sourceMarketId: market.baseAsset,
         sourceTimestamp, receivedAt: t, slot: midsSlot, orderBook: s.book, ticker,
         referencePrice: ticker.markPrice, priceKind: 'mark',
       };
+    },
+    /** Почему снапшота нет (для логов и ошибок); null — данные доступны. */
+    unavailableReason(market: Market): string | null {
+      const s = symbols.get(market.baseAsset);
+      if (!this.available()) return stuck ? 'stream stuck' : `stream ${status}`;
+      if (!s?.book) return 'no order book yet';
+      if (!s.market) return 'no market tick yet';
+      if (midsSlot === null) return 'no slot yet';
+      const t = now();
+      if (t - s.bookAt > BOOK_MAX_AGE_MS) return `order book ${t - s.bookAt}ms old`;
+      if (t - s.marketAt > MARKET_MAX_AGE_MS) return `market tick ${t - s.marketAt}ms old`;
+      if (t - lastSlotAdvanceAt > SLOT_ADVANCE_MAX_AGE_MS) return `slot not advancing for ${t - lastSlotAdvanceAt}ms`;
+      const mark = s.market.markPx;
+      if (s.book.midPrice > 0 && Math.abs(s.book.midPrice - mark) / mark > BOOK_MARK_MAX_DEVIATION) return 'order book diverged from mark';
+      return null;
     },
     /** Ждать первый снапшот до timeoutMs (новая подписка); null — не дождались. */
     waitForSnapshot(market: Market, timeoutMs: number): Promise<MarketSnapshot | null> {

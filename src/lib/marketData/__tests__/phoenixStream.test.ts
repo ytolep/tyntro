@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  BOOK_MARKET_MAX_AGE_MS, createPhoenixStream, IDLE_UNSUBSCRIBE_MS, SLOT_ADVANCE_MAX_AGE_MS,
+  BOOK_MAX_AGE_MS, MARKET_MAX_AGE_MS, createPhoenixStream, IDLE_UNSUBSCRIBE_MS, SLOT_ADVANCE_MAX_AGE_MS,
 } from '../phoenixStream';
 import { Market } from '../types';
 
@@ -145,20 +145,43 @@ test('кривые сообщения отклоняются: скрещённа
   assert.equal(snapshot.ticker.volume24h, null);
 });
 
-test('свежесть fail-closed: старый стакан или market → недоступно', () => {
+test('спокойный стакан действует, пока идёт пульс market (Phoenix шлёт книгу только при изменении)', () => {
   const h = harness();
   const socket = openSol(h);
   feed(socket, 100);
-  assert.ok(h.stream.peek(SOL));
-  // Стакан стареет сверх 5 с — данных нет, старое не отдаём.
-  h.advance(BOOK_MARKET_MAX_AGE_MS + 1);
-  assert.equal(h.stream.peek(SOL), null);
-  // Новый стакан, но market старый — всё ещё недоступно.
+  // 20 с без новых книг, но market и allMids приходят — книга остаётся верной.
+  for (let i = 1; i <= 20; i++) { h.advance(1_000); socket.push(MARKET); if (i % 5 === 0) socket.push(MIDS(100 + i)); }
+  const snapshot = h.stream.peek(SOL);
+  assert.ok(snapshot, 'спокойный рынок не должен считаться устаревшим');
+  assert.equal(snapshot.sourceTimestamp, h.clock.now);
+});
+
+test('свежесть fail-closed: книга старше 30 с или пропавший market → недоступно', () => {
+  const h = harness();
+  const socket = openSol(h);
+  feed(socket, 100);
+  // Пропал пульс market — недоступно, даже если книга свежая.
+  h.advance(MARKET_MAX_AGE_MS + 1);
   socket.push(BOOK);
-  assert.equal(h.stream.peek(SOL), null);
-  // Обновился и market — доступно.
-  socket.push(MARKET);
   socket.push(MIDS(101));
+  assert.equal(h.stream.peek(SOL), null);
+  socket.push(MARKET);
+  assert.ok(h.stream.peek(SOL));
+  // Книга старше 30 с при живом market — недоступно.
+  for (let i = 1; i <= 31; i++) { h.advance(1_000); socket.push(MARKET); if (i % 5 === 0) socket.push(MIDS(101 + i)); }
+  assert.ok(h.clock.now > BOOK_MAX_AGE_MS);
+  assert.equal(h.stream.peek(SOL), null);
+  socket.push(BOOK);
+  assert.ok(h.stream.peek(SOL));
+});
+
+test('книга, разошедшаяся с markPx больше чем на 2 %, недостоверна', () => {
+  const h = harness();
+  const socket = openSol(h);
+  feed(socket, 100);
+  socket.push({ ...MARKET, markPx: 109.665 * 1.03 });
+  assert.equal(h.stream.peek(SOL), null);
+  socket.push(MARKET);
   assert.ok(h.stream.peek(SOL));
 });
 

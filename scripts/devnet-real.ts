@@ -22,6 +22,7 @@ import {
   Connection, Keypair, PublicKey, Transaction, sendAndConfirmTransaction,
 } from '@solana/web3.js';
 import bs58 from 'bs58';
+import { REFUNDS_VERSION, RULES_VERSION, TERMS_VERSION } from '../src/lib/legal/versions';
 import { buildUsdcTransferInstructions, parseTransferRequestUrl } from '../src/lib/payments/transferTx';
 
 const BASE_URL = process.env.BASE_URL ?? 'http://localhost:3100';
@@ -131,12 +132,14 @@ async function main() {
   await step('вход админа реальным ключом (роль ADMIN)', async () => { S.admin = await login(admin, 'ADMIN'); });
 
   await step('покупка SPRINT $5K: PENDING и ссылка Solana Pay на казну', async () => {
-    const r = await http('POST', '/api/checkout/create', { json: { accountSize: 5000, planType: 'SPRINT' }, cookie: S.trader });
+    const r = await http('POST', '/api/checkout/create', { json: { accountSize: 5000, planType: 'SPRINT', acceptedTerms: true, termsVersion: TERMS_VERSION, refundsVersion: REFUNDS_VERSION, rulesVersion: RULES_VERSION }, cookie: S.trader });
     check(r.status === 200, `checkout ${r.status} ${JSON.stringify(r.body)}`);
     const req = parseTransferRequestUrl(r.body.url);
     check(req.recipient === admin.publicKey.toBase58(), `получатель ${req.recipient}`);
     check(req.splToken === USDC_MINT.toBase58(), 'не тот mint');
     check(req.amount === d(r.body.amount).toFixed(), 'не та сумма в ссылке');
+    const consent = await prisma.termsAcceptance.findFirst({ where: { purchaseId: r.body.id } });
+    check(consent?.termsVersion === TERMS_VERSION, 'согласие с условиями не записано для покупки');
     Object.assign(S, { purchaseId: r.body.id, reference: new PublicKey(req.reference), amount: d(r.body.amount) });
     console.log(`     к оплате ${S.amount} USDC, reference ${req.reference}`);
   });
