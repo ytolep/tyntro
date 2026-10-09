@@ -5,6 +5,7 @@ import { withAccountLock } from '@/lib/db/lock';
 import { getPaymentsConfig } from '@/lib/payments/config';
 import { verifyUsdcTransfer, type ParsedTransaction, type SolanaRpc } from '@/lib/payments/solanaPay';
 import { computeRulesHash } from '@/lib/payments/purchase';
+import { notify } from '@/lib/notifications';
 
 export const PURCHASE_EXPIRE_MS = 30 * 60 * 1000;
 
@@ -111,6 +112,13 @@ async function confirmPurchase(purchaseId: string, txSignature: string): Promise
       await tx.purchase.update({
         where: { id: purchase.id },
         data: { status: 'PAID', txSignature, accountId: account.id },
+      });
+      await notify(tx, {
+        userId: purchase.userId,
+        kind: 'PURCHASE_PAID',
+        title: 'Payment confirmed, challenge is live',
+        body: `Your ${purchase.challenge.planType} $${size.toFixed(0)} challenge has been paid for and the account is now active. Good luck!`,
+        accountId: account.id,
       });
       console.log(JSON.stringify({ level: 'info', msg: 'purchase confirmed', purchaseId: purchase.id, accountId: account.id }));
       return true;

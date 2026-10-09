@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { db } from '@/lib/db';
 import { withAccountLock } from '@/lib/db/lock';
+import { notify } from '@/lib/notifications';
 
 /**
  * Funded-стадия и выплаты.
@@ -138,6 +139,13 @@ export async function approveFundedAccount(adminId: string, accountId: string): 
         data: { sourceAccountId: source.id, fundedAccountId: funded.id, rulesHash: source.rulesHash },
       },
     });
+    await notify(tx, {
+      userId: source.userId,
+      kind: 'FUNDED_APPROVED',
+      title: 'Funded account approved',
+      body: `Your passed challenge is approved: a new $${size.toFixed(0)} funded (simulated) account is live with a ${source.challenge.profitSplitPct}% profit split.`,
+      accountId: funded.id,
+    });
     return funded.id;
   });
 }
@@ -150,13 +158,22 @@ export async function rejectFundedAccount(adminId: string, accountId: string, re
     throw new PayoutError(409, 'Only a PASSED challenge account can be rejected');
   const already = await db.auditLog.findFirst({ where: { action: 'FUNDED_APPROVED', targetId: accountId } });
   if (already) throw new PayoutError(409, 'Funded account is already approved for this challenge account');
-  await db.auditLog.create({
-    data: {
-      actorId: adminId,
-      action: 'FUNDED_REJECTED',
-      targetId: accountId,
-      data: reason ? { reason } : {},
-    },
+  await db.$transaction(async (tx) => {
+    await tx.auditLog.create({
+      data: {
+        actorId: adminId,
+        action: 'FUNDED_REJECTED',
+        targetId: accountId,
+        data: reason ? { reason } : {},
+      },
+    });
+    await notify(tx, {
+      userId: source.userId,
+      kind: 'FUNDED_REJECTED',
+      title: 'Funded request rejected',
+      body: reason ? `Your funded request was rejected: ${reason}` : 'Your funded request was rejected.',
+      accountId,
+    });
   });
 }
 
@@ -257,6 +274,15 @@ export async function decidePayout(
       await tx.auditLog.create({
         data: { actorId: adminId, action: 'PAYOUT_REJECTED', targetId: payoutId, data: { accountId: payout.accountId } },
       });
+      const owner = await tx.tradingAccount.findUnique({ where: { id: payout.accountId }, select: { userId: true } });
+      if (owner)
+        await notify(tx, {
+          userId: owner.userId,
+          kind: 'PAYOUT_REJECTED',
+          title: 'Payout rejected',
+          body: `Your payout request of ${(payout.amountUsd as Decimal).toFixed(2)} USDC was rejected.`,
+          accountId: payout.accountId,
+        });
       return { id: payoutId, status: 'REJECTED' };
     }
 
@@ -275,6 +301,15 @@ export async function decidePayout(
           data: { accountId: payout.accountId, amountUsd: payout.amountUsd.toFixed(2) },
         },
       });
+      const owner = await tx.tradingAccount.findUnique({ where: { id: payout.accountId }, select: { userId: true } });
+      if (owner)
+        await notify(tx, {
+          userId: owner.userId,
+          kind: 'PAYOUT_APPROVED',
+          title: 'Payout approved',
+          body: `Your payout of ${(payout.amountUsd as Decimal).toFixed(2)} USDC is approved and will be sent to your wallet shortly.`,
+          accountId: payout.accountId,
+        });
       return { id: payoutId, status: 'APPROVED' };
     }
 
@@ -327,6 +362,13 @@ export async function decidePayout(
           txSignature: signature,
         },
       },
+    });
+    await notify(tx, {
+      userId: account.userId,
+      kind: 'PAYOUT_PAID',
+      title: 'Payout sent',
+      body: `Your payout of ${(payout.amountUsd as Decimal).toFixed(2)} USDC has been sent. Transaction: ${signature}`,
+      accountId: account.id,
     });
     return { id: payoutId, status: 'PAID' };
   });

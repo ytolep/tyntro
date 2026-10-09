@@ -8,6 +8,7 @@ import { ArrowUpRight, ChevronDown, Menu, X, Wallet, Check, Copy, LogOut, LogIn 
 import { useMarketData } from '@/lib/marketData/MarketDataStore';
 import Brand from './Brand';
 import { useAuth } from '@/lib/auth/AuthContext';
+import NotificationBell from './NotificationBell';
 
 // Публичные разделы — в основной навигации; личные — только в меню аккаунта справа (N5).
 const links = [{ name: 'Overview', href: '/' }, { name: 'Challenges', href: '/challenges' }, { name: 'Trade', href: '/terminal' }, { name: 'Leaderboard', href: '/leaderboard' }];
@@ -75,6 +76,8 @@ export default function Navigation() {
               <button role="menuitem" onClick={() => void signOut()}><span>Sign out</span><LogOut size={13} /></button>
             </div>}
           </div>}
+          {/* K3: колокольчик уведомлений — слева от кнопки кошелька, только для вошедшего (компонент сам скрывается без входа). */}
+          <NotificationBell />
           <button className="wallet-button" onClick={() => connected ? setWalletOpen(true) : setVisible(true)}><Wallet size={15} /><span>{connected ? shortAddress : 'Connect wallet'}</span></button>
           <button className="mobile-menu-button" aria-label={menu ? 'Close navigation' : 'Open navigation'} aria-expanded={menu} onClick={() => setMenu(!menu)}>{menu ? <X size={20} /> : <Menu size={20} />}</button>
         </div>
