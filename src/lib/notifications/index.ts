@@ -9,6 +9,7 @@ import { db } from '../db';
 
 export type NotificationKind =
   | 'PURCHASE_PAID'
+  | 'PURCHASE_REFUNDED'
   | 'ACCOUNT_FAILED'
   | 'ACCOUNT_PASSED'
   | 'FUNDED_APPROVED'

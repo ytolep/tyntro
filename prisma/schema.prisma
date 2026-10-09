@@ -72,7 +72,11 @@ model Purchase {
   challenge   Challenge        @relation(fields: [challengeId], references: [id])
   reference   String           @unique
   amountUsdc  Decimal          @db.Decimal(38, 18)
-  status      String           @default("PENDING") // PENDING | PAID | EXPIRED
+  status      String           @default("PENDING") // PENDING | PAID | EXPIRED | REFUNDED
+  // Q3: ручной возврат админом — перевод USDC делает админ, подпись и причина фиксируются.
+  refundedAt      DateTime?
+  refundTxSignature String?
+  refundReason     String?
   // H1: один on-chain перевод подтверждает максимум одну покупку.
   txSignature String?          @unique
   accountId   String?

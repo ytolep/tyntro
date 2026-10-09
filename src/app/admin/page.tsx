@@ -9,6 +9,7 @@ import { BRAND_NAME } from '@/lib/brand';
 import FundedRowActions from './components/FundedRowActions';
 import PayoutRowActions from './components/PayoutRowActions';
 import KycControl from './components/KycControl';
+import RefundControl from './components/RefundControl';
 
 // Реальные метрики и очереди из /api/admin/metrics и /api/admin/queue (роль ADMIN).
 // Действия: funded approve/reject и payouts/decide — с инлайн-подтверждением вторым
@@ -346,6 +347,8 @@ export default function AdminPage() {
           </table>
         </div>
       </section>
+
+      <RefundControl disabled={busy} />
     </div>
   );
 }
