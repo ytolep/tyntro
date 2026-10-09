@@ -215,6 +215,13 @@ test('пробой дневного floor → FAILED, позиции закры�
   // FAILED-счёт больше не переоценивается
   await runRiskTick(deps());
   assert.equal(await db.riskEvent.count({ where: { accountId: acc.id } }), 1);
+
+  // K3: FAILED создаёт ровно одно уведомление с причиной, повторный тик не дублирует
+  const notifs = await db.notification.findMany({ where: { accountId: acc.id } });
+  assert.equal(notifs.length, 1);
+  assert.equal(notifs[0].kind, 'ACCOUNT_FAILED');
+  assert.equal(notifs[0].userId, userId);
+  assert.match(notifs[0].body, /daily drawdown/);
 });
 
 test('ликвидация по поддерживающей марже → FAILED и LIQUIDATION', async () => {
@@ -239,6 +246,8 @@ test('ликвидация по поддерживающей марже → FAIL
   assert.equal((await db.position.findFirstOrThrow({ where: { accountId: acc.id } })).status, 'CLOSED');
   const events = await db.riskEvent.findMany({ where: { accountId: acc.id } });
   assert.equal(events[0].ruleName, 'LIQUIDATION');
+  // K3: причина ликвидации отражается в теле уведомления
+  assert.match((await db.notification.findFirstOrThrow({ where: { accountId: acc.id } })).body, /liquidation/);
 });
 
 test('цель достигнута, позиций нет → PASSED, лимитки отменены', async () => {
@@ -257,4 +266,9 @@ test('цель достигнута, позиций нет → PASSED, лими�
   assert.equal((await db.tradingAccount.findUniqueOrThrow({ where: { id: acc.id } })).status, 'PASSED');
   assert.equal((await db.order.findUniqueOrThrow({ where: { id: order.id } })).status, 'CANCELLED');
   assert.equal(await db.fill.count({ where: { accountId: acc.id } }), 0);
+
+  // K3: PASSED создаёт уведомление владельцу счёта
+  const passed = await db.notification.findFirstOrThrow({ where: { accountId: acc.id } });
+  assert.equal(passed.kind, 'ACCOUNT_PASSED');
+  assert.equal(passed.userId, userId);
 });

@@ -1,6 +1,7 @@
 import type { Prisma, TradingAccount } from '@prisma/client';
 import { db } from '../db';
 import { withAccountLock } from '../db/lock';
+import { notify } from '../notifications';
 import type { AuthUser } from '../auth';
 import { d, D, roundDownToStep } from '../core/money';
 import { applyFill } from '../core/position';
@@ -376,8 +377,27 @@ async function fillAndSettle(
 
   // §5 + L1 (docs/REVIEW.md): после PASSED/FAILED новые позиции не открываются —
   // отменяем открытые лимитки при любой смене статуса, тем же путём, что и воркер.
-  if (status !== acc.status)
+  if (status !== acc.status) {
     await tx.order.updateMany({ where: { accountId: acc.id, status: 'OPEN' }, data: { status: 'CANCELLED' } });
+    await notify(
+      tx,
+      status === 'PASSED'
+        ? {
+            userId: acc.userId,
+            kind: 'ACCOUNT_PASSED',
+            title: 'Challenge passed!',
+            body: 'Profit target reached — your challenge account is PASSED. Request funded activation when ready.',
+            accountId: acc.id,
+          }
+        : {
+            userId: acc.userId,
+            kind: 'ACCOUNT_FAILED',
+            title: 'Account failed',
+            body: `Rule breached: ${evaluation.breach ?? 'LIQUIDATION'}. No positions left open.`,
+            accountId: acc.id,
+          },
+    );
+  }
   if (status === 'FAILED')
     await tx.riskEvent.create({
       data: {

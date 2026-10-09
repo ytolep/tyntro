@@ -10,6 +10,7 @@ import { getMarketSnapshot } from '../lib/marketData/server';
 import type { MarketSnapshot } from '../lib/marketData/types';
 import { withAccountLock } from '../lib/db/lock';
 import { db } from '../lib/db';
+import { notify } from '../lib/notifications';
 import { jsonLog } from './log';
 import { takerFeeOf } from '../lib/marketData/markets';
 import { resolveMarket } from '../lib/marketData/catalog';
@@ -291,9 +292,24 @@ async function processAccount(deps: RiskTickDeps, accountId: string, marks: Map<
           description: `${reason}: equity ${evaluation.equity.toFixed(2)} (static floor ${evaluation.staticFloor.toFixed(2)}, daily floor ${evaluation.dailyFloor.toFixed(2)}); позиции закрыты по метке`,
         },
       });
+      const cause = reason === 'DAILY_DD' ? 'daily drawdown breach' : reason === 'STATIC_DD' ? 'max drawdown breach' : 'liquidation';
+      await notify(tx, {
+        userId: account.userId,
+        kind: 'ACCOUNT_FAILED',
+        title: 'Account failed',
+        body: `Account failed by ${cause}. Equity $${evaluation.equity.toFixed(2)} — all positions were closed at market.`,
+        accountId,
+      });
       deps.log('warn', 'account failed, positions force-closed', { accountId, reason });
     } else if (evaluation.passed) {
       status = 'PASSED';
+      await notify(tx, {
+        userId: account.userId,
+        kind: 'ACCOUNT_PASSED',
+        title: 'Challenge passed!',
+        body: 'Profit target reached — your challenge account is PASSED. Request funded activation from the Funded page.',
+        accountId,
+      });
       deps.log('info', 'account passed', { accountId });
     }
 

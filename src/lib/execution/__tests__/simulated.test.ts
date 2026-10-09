@@ -217,4 +217,8 @@ test('L1: FAILED через API-путь отменяет открытые ли�
   const limit = await db.order.findFirstOrThrow({ where: { accountId: acc.id, type: 'LIMIT' } });
   assert.equal(limit.status, 'CANCELLED', 'открытые лимитки отменяются и при FAILED');
   assert.equal(await db.order.count({ where: { accountId: acc.id, status: 'OPEN' } }), 0);
+  // K3: FAILED при расчёте ордера тоже создаёт уведомление (та же транзакция)
+  const notif = await db.notification.findFirstOrThrow({ where: { accountId: acc.id } });
+  assert.equal(notif.kind, 'ACCOUNT_FAILED');
+  assert.equal(notif.userId, user.id);
 });

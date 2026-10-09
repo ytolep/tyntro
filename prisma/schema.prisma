@@ -20,6 +20,7 @@ model User {
   sessions      Session[]
   purchases     Purchase[]
   termsAcceptances TermsAcceptance[]
+  notifications Notification[]
 }
 
 // Одноразовый nonce для подписи входа кошельком (SIWS).
@@ -257,4 +258,19 @@ model AuditLog {
   createdAt DateTime @default(now())
 
   @@index([createdAt])
+}
+
+// Уведомления в приложении (K3): пишутся notify() в той же транзакции, что и событие.
+model Notification {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind      String // PURCHASE_PAID | ACCOUNT_FAILED | ACCOUNT_PASSED | FUNDED_APPROVED | FUNDED_REJECTED | PAYOUT_APPROVED | PAYOUT_REJECTED | PAYOUT_PAID
+  title     String
+  body      String
+  accountId String?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, createdAt])
 }
