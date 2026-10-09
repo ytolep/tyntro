@@ -138,3 +138,21 @@ html { scrollbar-gutter: stable; }
 .terminal-footer{padding:10px 14px;font-size:9px;gap:10px}
 .terminal-footer nav{gap:14px}
 }
+
+/* K1 — админка: инлайн-действия в очередях (эталон — u2-таблицы) */
+.u2-table td.k1-cell{white-space:normal;min-width:230px}
+.k1-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.k1-btn{font-size:11px;padding:8px 13px;border-radius:6px;border:1px solid var(--line);background:#16121d;color:#d9d4e2;white-space:nowrap}
+.k1-btn:hover:not(:disabled){border-color:var(--violet);color:#fff}
+.k1-btn:disabled{opacity:.55;cursor:not-allowed}
+.k1-btn-primary{border-color:#2c4a3d;background:#12211b;color:#9fe8c6}
+.k1-btn-primary:hover:not(:disabled){border-color:var(--mint);color:#cdf5e3}
+.k1-btn-danger{border-color:#4a2430;background:#1d1116;color:#ffb4b4}
+.k1-btn-danger:hover:not(:disabled){border-color:#ff7d8a;color:#ffdadd}
+.k1-armed,.k1-armed:hover:not(:disabled){border-color:#a48b3f;background:#1c1810;color:#edcf99}
+.k1-error{width:100%;color:#ff9d9d;font-size:11px;line-height:1.5}
+.k1-paid-form{display:flex;align-items:center;gap:8px;flex-wrap:wrap;width:100%}
+.k1-paid-form input{flex:1;min-width:220px;background:#0b0b10;border:1px solid var(--line);border-radius:6px;padding:8px 12px;color:#f3f2f7;font-size:11px}
+.k1-paid-form input:focus{outline:1px solid var(--violet)}
+.k1-sig-link{font-size:11px;color:var(--mint);text-decoration:underline;text-underline-offset:3px;white-space:nowrap}
+.k1-sig-hint{font-size:10px;color:var(--muted)}

@@ -1,23 +1,60 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { num, usd } from '@/lib/display';
 import { useAuth } from '@/lib/auth/AuthContext';
 import SignInRequired from '@/components/SignInRequired';
 import { BRAND_NAME } from '@/lib/brand';
+import FundedRowActions from './components/FundedRowActions';
+import PayoutRowActions from './components/PayoutRowActions';
 
 // Реальные метрики и очереди из /api/admin/metrics и /api/admin/queue (роль ADMIN).
+// Действия: funded approve/reject и payouts/decide — с инлайн-подтверждением вторым
+// нажатием, обновлением очереди и метрик после каждого действия, ошибки API — текстом.
 // Сам /admin скрыт layout'ом (404 не-админам); здесь тот же визуальный эталон, что и dashboard.
+interface Metrics {
+  purchases: number;
+  revenueUsdc: string;
+  activeAccounts: number;
+  passed: number;
+  failed: number;
+  passRatePct: number | null;
+  fundedAccounts: number;
+  payoutsPaid: { count: number; totalUsd: string };
+}
+
+interface FundedAccountRow {
+  id: string;
+  accountSize: string;
+  status: string;
+  phase: string;
+  totalTrades: number;
+  updatedAt: string;
+  user?: { walletAddress?: string } | null;
+  challenge?: { planType?: string } | null;
+}
+
+interface PayoutRow {
+  id: string;
+  amountUsd: string;
+  status: string;
+  timestamp: string;
+  account?: { id: string; user?: { walletAddress?: string } | null; challenge?: { planType?: string } | null } | null;
+}
+
 export default function AdminPage() {
   const { user } = useAuth();
-  const [metrics, setMetrics] = useState<any>(null);
-  const [queue, setQueue] = useState<any>(null);
-  const [error, setError] = useState<string>('');
-  const [loading, setLoading] = useState<boolean>(true);
+  const [metrics, setMetrics] = useState<Metrics | null>(null);
+  const [queue, setQueue] = useState<{ fundedQueue: FundedAccountRow[]; payoutQueue: PayoutRow[] } | null>(null);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [pending, setPending] = useState<string | null>(null); // ключ действия; один запрос за раз
+  const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
+  const inFlight = useRef(false); // синхронная защита: двойной клик не даёт второго запроса
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (initial: boolean) => {
+    if (initial) setLoading(true);
     setError('');
     try {
       const [mRes, qRes] = await Promise.all([fetch('/api/admin/metrics'), fetch('/api/admin/queue')]);
@@ -30,13 +67,73 @@ export default function AdminPage() {
     } catch (e: any) {
       setError(e.message || 'Failed to load admin data');
     } finally {
-      setLoading(false);
+      if (initial) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    void load();
+    void load(true);
   }, [load]);
+
+  /** Выполняет действие и обновляет очередь и метрики; повтор во время запроса игнорируется. */
+  const act = useCallback(
+    async (key: string, run: () => Promise<Response>) => {
+      if (inFlight.current) return;
+      inFlight.current = true;
+      setPending(key);
+      setRowErrors((prev) => ({ ...prev, [key]: '' }));
+      try {
+        const res = await run();
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error || `Request failed (${res.status})`);
+        }
+        await load(false);
+      } catch (e: any) {
+        setRowErrors((prev) => ({ ...prev, [key]: e.message || 'Request failed' }));
+      } finally {
+        inFlight.current = false;
+        setPending(null);
+      }
+    },
+    [load],
+  );
+
+  const approveFunded = useCallback(
+    (accountId: string) =>
+      act(`funded:${accountId}`, () =>
+        fetch('/api/admin/funded/approve', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ accountId }),
+        }),
+      ),
+    [act],
+  );
+
+  const rejectFunded = useCallback(
+    (accountId: string) =>
+      act(`funded:${accountId}`, () =>
+        fetch('/api/admin/funded/reject', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ accountId }),
+        }),
+      ),
+    [act],
+  );
+
+  const decidePayout = useCallback(
+    (payoutId: string, approve: boolean, txSignature?: string) =>
+      act(`payout:${payoutId}`, () =>
+        fetch('/api/admin/payouts/decide', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(txSignature === undefined ? { payoutId, approve } : { payoutId, approve, txSignature }),
+        }),
+      ),
+    [act],
+  );
 
   if (user === null) {
     return (
@@ -63,7 +160,7 @@ export default function AdminPage() {
         <h1 className="text-4xl mt-5">Metrics unavailable.</h1>
         <p className="text-gray-400 mt-4 max-w-xl">{error}</p>
         <div className="flex gap-4 mt-6">
-          <button className="button-secondary" onClick={() => void load()}>
+          <button className="button-secondary" onClick={() => void load(true)}>
             Retry
           </button>
         </div>
@@ -72,8 +169,11 @@ export default function AdminPage() {
   }
 
   const m = metrics;
-  const fundedQueue: any[] = queue?.fundedQueue ?? [];
-  const payoutQueue: any[] = queue?.payoutQueue ?? [];
+  if (!m || !queue) return null;
+
+  const fundedQueue = queue.fundedQueue ?? [];
+  const payoutQueue = queue.payoutQueue ?? [];
+  const busy = pending !== null;
 
   const cards = [
     { label: 'EVALUATIONS BOUGHT', value: String(m.purchases), note: '', accent: '' },
@@ -102,7 +202,7 @@ export default function AdminPage() {
           <h1>Platform overview.</h1>
           <p>Live platform metrics and approval queues, computed from the database.</p>
         </div>
-        <button className="button-secondary" onClick={() => void load()} aria-label="Refresh admin data">
+        <button className="button-secondary" onClick={() => void load(false)} aria-label="Refresh admin data">
           <RefreshCw size={15} /> Refresh
         </button>
       </div>
@@ -133,6 +233,7 @@ export default function AdminPage() {
                 <th>Trades</th>
                 <th>Status</th>
                 <th>Updated</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -149,11 +250,21 @@ export default function AdminPage() {
                       <span className="text-gray-500"> / {a.phase}</span>
                     </td>
                     <td>{new Date(a.updatedAt).toLocaleString()}</td>
+                    <td className="k1-cell">
+                      <FundedRowActions
+                        disabled={busy}
+                        onApprove={() => void approveFunded(a.id)}
+                        onReject={() => void rejectFunded(a.id)}
+                      />
+                      {rowErrors[`funded:${a.id}`] ? (
+                        <div className="k1-error">{rowErrors[`funded:${a.id}`]}</div>
+                      ) : null}
+                    </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={7} className="u2-empty-cell">
+                  <td colSpan={8} className="u2-empty-cell">
                     No passed accounts awaiting a funded decision.
                   </td>
                 </tr>
@@ -178,6 +289,7 @@ export default function AdminPage() {
                 <th>Amount</th>
                 <th>Status</th>
                 <th>Requested</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -202,11 +314,21 @@ export default function AdminPage() {
                       {p.status}
                     </td>
                     <td>{new Date(p.timestamp).toLocaleString()}</td>
+                    <td className="k1-cell">
+                      <PayoutRowActions
+                        status={p.status}
+                        disabled={busy}
+                        onDecide={(approve, txSignature) => void decidePayout(p.id, approve, txSignature)}
+                      />
+                      {rowErrors[`payout:${p.id}`] ? (
+                        <div className="k1-error">{rowErrors[`payout:${p.id}`]}</div>
+                      ) : null}
+                    </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={6} className="u2-empty-cell">
+                  <td colSpan={7} className="u2-empty-cell">
                     No payout requests pending.
                   </td>
                 </tr>
