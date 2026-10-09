@@ -1,0 +1,17 @@
+# Caddy для прод-стека PROPS (deploy/docker-compose.prod.yml).
+# Адрес сайта приходит из env DOMAIN (передаётся compose-файлом).
+#  - настоящий домен: автоматический HTTPS Let's Encrypt (HTTP-01 + TLS-ALPN),
+#    сертификат хранится в volume caddy_data и перевыпускается сам;
+#  - localhost: локальный сертификат внутреннего CA Caddy (проверка curl -k).
+#
+# Почту для уведомлений Let's Encrypt можно задать блоком
+#   { email ops@example.com }
+# в начале файла — опционально.
+{$DOMAIN} {
+	encode zstd gzip
+
+	# Caddy сам подставляет X-Forwarded-Proto/Host/For. Приложение берёт IP
+	# из x-forwarded-for с TRUSTED_PROXY_COUNT=1 (последний элемент = клиент).
+	# HSTS и остальные заголовки проставляет приложение (next.config.js).
+	reverse_proxy web:3000
+}

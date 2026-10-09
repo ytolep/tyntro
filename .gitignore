@@ -4,5 +4,8 @@ node_modules/
 .env.local
 !.env.example
 !.env.test
+# Деплой (docs/DEPLOY.md): прод-env с секретами и дампы БД не коммитятся.
+.env.production
+deploy/backups/
 *.tsbuildinfo
 .DS_Store
