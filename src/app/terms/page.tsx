@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { TERMS_VERSION } from '@/lib/legal/versions';
 
 export const metadata = {
   title: 'Terms of service (draft)',
@@ -10,6 +11,7 @@ export default function TermsPage() {
     <div className="site-container legal-page">
       <span className="eyebrow">LEGAL</span>
       <h1>Terms of service<span>.</span></h1>
+      <p className="legal-lede">Version {TERMS_VERSION}</p>
       <div className="u3-draft-banner" role="note">
         <b>Draft — pending legal review.</b> This document is not final. It describes how the service is
         intended to work; the finalized version will be published here before it takes effect.

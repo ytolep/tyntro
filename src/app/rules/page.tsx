@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { RULES_VERSION } from '@/lib/legal/versions';
 import { PLAN_CONFIGS, PRICING_MATRIX } from '@/lib/pricingConfig';
 
 export const metadata = {
@@ -27,6 +28,7 @@ export default function RulesPage() {
     <div className="site-container legal-page">
       <span className="eyebrow">EVALUATION RULES</span>
       <h1>Clear rules.<br /><span>No surprises.</span></h1>
+      <p className="legal-lede">Version {RULES_VERSION} — rules of a purchased challenge are locked at purchase.</p>
       <p className="legal-lede">
         Every challenge runs on the same principles: fixed drawdown floors, an automatic risk engine,
         and rules that cannot change after you buy. This page explains exactly how each rule is measured.

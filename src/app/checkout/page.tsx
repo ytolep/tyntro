@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { PublicKey, Transaction } from '@solana/web3.js';
 import { getPrice, PLAN_CONFIGS } from '@/lib/pricingConfig';
+import { REFUNDS_VERSION, RULES_VERSION, TERMS_VERSION } from '@/lib/legal/versions';
 import { useAuth } from '@/lib/auth/AuthContext';
 import { associatedTokenAddress, buildUsdcTransferInstructions, parseTransferRequestUrl } from '@/lib/payments/transferTx';
 import { AlertTriangle, CheckCircle2, Copy, ExternalLink, Loader2, Wallet } from 'lucide-react';
@@ -50,6 +51,8 @@ function CheckoutContent() {
   const explorerCluster = process.env.NEXT_PUBLIC_SOLANA_CLUSTER === 'devnet' ? '?cluster=devnet' : '';
 
   const createPurchase = useCallback(async () => {
+    // K2: сервер создаёт покупку только с согласием на текущие версии документов.
+    if (!agreed) return;
     setStatus('LOADING');
     setError(null);
     setPurchase(null);
@@ -59,7 +62,14 @@ function CheckoutContent() {
       const res = await fetch('/api/checkout/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accountSize: size, planType: plan }),
+        body: JSON.stringify({
+          accountSize: size,
+          planType: plan,
+          acceptedTerms: true,
+          termsVersion: TERMS_VERSION,
+          refundsVersion: REFUNDS_VERSION,
+          rulesVersion: RULES_VERSION,
+        }),
       });
       // Сессия могла истечь между входом и оплатой — возвращаем к шагу входа.
       if (res.status === 401) {
@@ -73,7 +83,7 @@ function CheckoutContent() {
       console.error(err);
       setError('Could not start checkout. Please try again.');
     }
-  }, [size, plan]);
+  }, [size, plan, agreed]);
 
   // Покупка создаётся только для вошедшего пользователя (A1).
   useEffect(() => {
@@ -265,6 +275,7 @@ function CheckoutContent() {
           {user && !error && status === 'LOADING' && (
             <div className="pay-step">
               <p className="pay-waiting"><Loader2 className="w-4 h-4 animate-spin" /> Creating your payment request…</p>
+              {!agreed && <small className="pay-hint">Check the agreement box to continue.</small>}
             </div>
           )}
 

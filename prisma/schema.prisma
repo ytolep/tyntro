@@ -19,6 +19,7 @@ model User {
   accounts      TradingAccount[]
   sessions      Session[]
   purchases     Purchase[]
+  termsAcceptances TermsAcceptance[]
 }
 
 // Одноразовый nonce для подписи входа кошельком (SIWS).
@@ -71,6 +72,26 @@ model Purchase {
   accountId   String?
   account     TradingAccount?  @relation(fields: [accountId], references: [id])
   createdAt   DateTime         @default(now())
+  termsAcceptance TermsAcceptance?
+}
+
+// K2: согласие с версиями документов (Terms, Refund policy, Rules) при покупке.
+// rulesHash — тот же хэш правил плана, что фиксируется на счёте (purchase.ts).
+model TermsAcceptance {
+  id             String    @id @default(uuid())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id])
+  purchaseId     String?   @unique
+  purchase       Purchase? @relation(fields: [purchaseId], references: [id])
+  termsVersion   String
+  refundsVersion String
+  rulesVersion   String
+  rulesHash      String
+  acceptedAt     DateTime  @default(now())
+  ip             String?
+  userAgent      String?
+
+  @@index([userId, acceptedAt])
 }
 
 model TradingAccount {
