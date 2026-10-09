@@ -141,7 +141,9 @@ html { scrollbar-gutter: stable; }
 }
 
 /* K1 — админка: инлайн-действия в очередях (эталон — u2-таблицы) */
-.u2-table td.k1-cell{white-space:normal;min-width:230px}
+.u2-table td.k1-cell{white-space:normal;min-width:200px}
+/* D2: дата может переноситься при нехватке места — колонка действий не выталкивается за панель */
+.u2-table td.k1-wrap{white-space:normal}
 .k1-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .k1-btn{font-size:11px;padding:8px 13px;border-radius:6px;border:1px solid var(--line);background:#16121d;color:#d9d4e2;white-space:nowrap}
 .k1-btn:hover:not(:disabled){border-color:var(--violet);color:#fff}
@@ -153,7 +155,7 @@ html { scrollbar-gutter: stable; }
 .k1-armed,.k1-armed:hover:not(:disabled){border-color:#a48b3f;background:#1c1810;color:#edcf99}
 .k1-error{width:100%;color:#ff9d9d;font-size:11px;line-height:1.5}
 .k1-paid-form{display:flex;align-items:center;gap:8px;flex-wrap:wrap;width:100%}
-.k1-paid-form input{flex:1;min-width:220px;background:#0b0b10;border:1px solid var(--line);border-radius:6px;padding:8px 12px;color:#f3f2f7;font-size:11px}
+.k1-paid-form input{flex:1;min-width:160px;background:#0b0b10;border:1px solid var(--line);border-radius:6px;padding:8px 12px;color:#f3f2f7;font-size:11px}
 .k1-paid-form input:focus{outline:1px solid var(--violet)}
 .k1-sig-link{font-size:11px;color:var(--mint);text-decoration:underline;text-underline-offset:3px;white-space:nowrap}
 .k1-sig-hint{font-size:10px;color:var(--muted)}

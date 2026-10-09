@@ -37,6 +37,10 @@ interface FundedAccountRow {
   challenge?: { planType?: string } | null;
 }
 
+/** Кошелёк в таблицах очередей: сокращение как в лидерборде, полный адрес — в title. */
+const shortWallet = (wallet?: string | null) =>
+  wallet && wallet.length > 12 ? `${wallet.slice(0, 6)}…${wallet.slice(-4)}` : (wallet ?? '');
+
 interface PayoutRow {
   id: string;
   amountUsd: string;
@@ -243,7 +247,7 @@ export default function AdminPage() {
                 fundedQueue.map((a) => (
                   <tr key={a.id}>
                     <td>#{a.id.slice(0, 8)}</td>
-                    <td>{a.user?.walletAddress}</td>
+                    <td title={a.user?.walletAddress}>{shortWallet(a.user?.walletAddress)}</td>
                     <td>{a.challenge?.planType}</td>
                     <td>{usd(num(a.accountSize))}</td>
                     <td>{a.totalTrades}</td>
@@ -251,7 +255,7 @@ export default function AdminPage() {
                       <span className="text-profit">{a.status}</span>
                       <span className="text-gray-500"> / {a.phase}</span>
                     </td>
-                    <td>{new Date(a.updatedAt).toLocaleString()}</td>
+                    <td className="k1-wrap">{new Date(a.updatedAt).toLocaleString()}</td>
                     <td className="k1-cell">
                       <FundedRowActions
                         disabled={busy}
@@ -300,7 +304,7 @@ export default function AdminPage() {
                 payoutQueue.map((p) => (
                   <tr key={p.id}>
                     <td>#{p.id.slice(0, 8)}</td>
-                    <td>{p.account?.user?.walletAddress}</td>
+                    <td title={p.account?.user?.walletAddress}>{shortWallet(p.account?.user?.walletAddress)}</td>
                     <td>
                       #{p.account?.id.slice(0, 8)} · {p.account?.challenge?.planType}
                     </td>
@@ -316,7 +320,7 @@ export default function AdminPage() {
                     >
                       {p.status}
                     </td>
-                    <td>{new Date(p.timestamp).toLocaleString()}</td>
+                    <td className="k1-wrap">{new Date(p.timestamp).toLocaleString()}</td>
                     <td className="k1-cell">
                       <KycControl
                         wallet={p.account?.user?.walletAddress}

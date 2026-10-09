@@ -22,6 +22,7 @@ let decidePOST: (req: Request) => Promise<Response>;
 let payoutsGET: (req: Request) => Promise<Response>;
 let payoutRequestPOST: (req: Request) => Promise<Response>;
 let fundedRequestPOST: (req: Request) => Promise<Response>;
+let queueGET: (req: Request) => Promise<Response>;
 
 let traderId: string;
 let adminId: string;
@@ -109,6 +110,7 @@ before(async () => {
   ({ GET: payoutsGET } = await import('../../../app/api/payouts/route'));
   ({ POST: payoutRequestPOST } = await import('../../../app/api/payouts/request/route'));
   ({ POST: fundedRequestPOST } = await import('../../../app/api/funded/request/route'));
+  ({ GET: queueGET } = await import('../../../app/api/admin/queue/route'));
 
   traderId = (await db.user.create({ data: { walletAddress: 'payout-trader' } })).id;
   adminId = (await db.user.create({ data: { walletAddress: 'payout-admin', role: 'ADMIN' } })).id;
@@ -345,4 +347,26 @@ test('funded review: запрос трейдером идемпотентен, r
     (await rejectPOST(post('/api/admin/funded/reject', { accountId: sourceId }, adminCookie))).status,
     409,
   );
+});
+
+test('очередь админа: одобренные и отклонённые счета исключены, нерешённые остаются', async () => {
+  const approvedId = await makeAccount(traderId, 'PASSED');
+  await approveAndGetFundedId(approvedId);
+  const rejectedId = await makeAccount(traderId, 'PASSED');
+  assert.equal(
+    (await rejectPOST(post('/api/admin/funded/reject', { accountId: rejectedId }, adminCookie))).status,
+    200,
+  );
+  const pendingId = await makeAccount(traderId, 'PASSED');
+
+  const res = await queueGET(get('/api/admin/queue', adminCookie));
+  assert.equal(res.status, 200);
+  const queue = await res.json();
+  const ids: string[] = queue.fundedQueue.map((a: { id: string }) => a.id);
+  assert.ok(ids.includes(pendingId), 'undecided PASSED account must stay in the queue');
+  assert.ok(!ids.includes(approvedId), 'approved account must leave the queue');
+  assert.ok(!ids.includes(rejectedId), 'rejected account must leave the queue');
+
+  // Очередь доступна только админу.
+  assert.equal((await queueGET(get('/api/admin/queue', traderCookie))).status, 403);
 });
