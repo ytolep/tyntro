@@ -15,7 +15,9 @@ export type NotificationKind =
   | 'FUNDED_REJECTED'
   | 'PAYOUT_APPROVED'
   | 'PAYOUT_REJECTED'
-  | 'PAYOUT_PAID';
+  | 'PAYOUT_PAID'
+  | 'KYC_VERIFIED'
+  | 'KYC_REJECTED';
 
 export interface NotifyInput {
   userId: string;

@@ -205,7 +205,7 @@ export async function requestPayout(
   userId: string,
   accountId: string,
   amountInput: unknown,
-): Promise<{ payoutId: string; availableUsd: string }> {
+): Promise<{ payoutId: string; availableUsd: string; kycStatus: string }> {
   const amount = parsePayoutAmount(amountInput);
   return withAccountLock(accountId, async (tx) => {
     const account = (await tx.tradingAccount.findUnique({
@@ -232,7 +232,9 @@ export async function requestPayout(
         data: { accountId, amountUsd: amount.toFixed(2) },
       },
     });
-    return { payoutId: payout.id, availableUsd: available.minus(amount).toFixed(2) };
+    // Q2: запрос разрешён без KYC, но в ответе видно, что нужна верификация.
+    const user = await tx.user.findUnique({ where: { id: userId }, select: { kycStatus: true } });
+    return { payoutId: payout.id, availableUsd: available.minus(amount).toFixed(2), kycStatus: user?.kycStatus ?? 'NONE' };
   });
 }
 
@@ -286,6 +288,14 @@ export async function decidePayout(
       return { id: payoutId, status: 'REJECTED' };
     }
 
+    // Q2: KYC-шлюз — выплата не может стать APPROVED/PAID, пока kycStatus владельца != VERIFIED.
+    const owner = await tx.tradingAccount.findUnique({
+      where: { id: payout.accountId },
+      select: { userId: true, user: { select: { kycStatus: true } } },
+    });
+    if (!owner || owner.user.kycStatus !== 'VERIFIED')
+      throw new PayoutError(409, 'KYC_REQUIRED: user identity must be verified before a payout can be approved or paid');
+
     if (payout.status === 'APPROVED' && !signature)
       throw new PayoutError(409, 'Payout is already approved; provide txSignature to mark it paid');
     if (payout.status !== 'REQUESTED' && payout.status !== 'APPROVED')
@@ -301,15 +311,13 @@ export async function decidePayout(
           data: { accountId: payout.accountId, amountUsd: payout.amountUsd.toFixed(2) },
         },
       });
-      const owner = await tx.tradingAccount.findUnique({ where: { id: payout.accountId }, select: { userId: true } });
-      if (owner)
-        await notify(tx, {
-          userId: owner.userId,
-          kind: 'PAYOUT_APPROVED',
-          title: 'Payout approved',
-          body: `Your payout of ${(payout.amountUsd as Decimal).toFixed(2)} USDC is approved and will be sent to your wallet shortly.`,
-          accountId: payout.accountId,
-        });
+      await notify(tx, {
+        userId: owner.userId,
+        kind: 'PAYOUT_APPROVED',
+        title: 'Payout approved',
+        body: `Your payout of ${(payout.amountUsd as Decimal).toFixed(2)} USDC is approved and will be sent to your wallet shortly.`,
+        accountId: payout.accountId,
+      });
       return { id: payoutId, status: 'APPROVED' };
     }
 
@@ -380,6 +388,8 @@ export async function decidePayout(
 
 export interface PayoutOverview {
   walletAddress: string;
+  /** Q2: статус ручной верификации (NONE | VERIFIED | REJECTED) — виден в профиле. */
+  kycStatus: string;
   accounts: Array<{
     id: string;
     planType: string;
@@ -446,6 +456,7 @@ export async function payoutOverview(userId: string): Promise<PayoutOverview> {
 
   return {
     walletAddress: user.walletAddress,
+    kycStatus: user.kycStatus,
     accounts: accountRows,
     payouts: payouts.map((p) => ({
       id: p.id,
