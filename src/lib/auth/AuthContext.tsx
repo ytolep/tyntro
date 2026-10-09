@@ -1,5 +1,5 @@
 'use client';
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useWalletModal } from '@solana/wallet-adapter-react-ui';
 import bs58 from 'bs58';
@@ -20,6 +20,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const { setVisible } = useWalletModal();
   const [user, setUser] = useState<AuthUser | null | undefined>(undefined);
   const [signingIn, setSigningIn] = useState(false);
+  // Кошелёк подключают ради входа: после подключения сразу просим подпись, второй клик «Sign in» не нужен.
+  const signInAfterConnect = useRef(false);
 
   // Сессия в httpOnly-cookie: состояние входа знает только сервер.
   useEffect(() => {
@@ -30,7 +32,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // SIWS: nonce → подпись кошельком → verify.
   const signIn = useCallback(async () => {
-    if (!connected || !publicKey || !signMessage) { setVisible(true); return; }
+    if (!connected || !publicKey || !signMessage) { signInAfterConnect.current = true; setVisible(true); return; }
     if (signingIn) return;
     setSigningIn(true);
     try {
@@ -45,6 +47,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch { setUser(null); } // отмена подписи или ошибка сети
     finally { setSigningIn(false); }
   }, [connected, publicKey, signMessage, signingIn, setVisible]);
+
+  useEffect(() => {
+    if (!signInAfterConnect.current || !connected || !publicKey || !signMessage) return;
+    signInAfterConnect.current = false;
+    if (user?.walletAddress !== publicKey.toBase58()) void signIn();
+  }, [connected, publicKey, signMessage, user, signIn]);
 
   const signOut = useCallback(async () => {
     await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});

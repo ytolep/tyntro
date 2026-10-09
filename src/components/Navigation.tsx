@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useWallet } from '@solana/wallet-adapter-react';
-import { useWalletModal } from '@solana/wallet-adapter-react-ui';
 import { ArrowUpRight, ChevronDown, Menu, X, Wallet, Check, Copy, LogOut, LogIn } from 'lucide-react';
 import { useMarketData } from '@/lib/marketData/MarketDataStore';
 import Brand from './Brand';
@@ -17,7 +16,7 @@ const accountLinks = [{ name: 'Dashboard', href: '/dashboard' }, { name: 'Histor
 type AccountSummary = { id: string; accountSize: number; mode: string; status: string; currentEquity: number | null };
 
 export default function Navigation() {
-  const pathname = usePathname(); const { publicKey, connected, disconnect } = useWallet(); const { setVisible } = useWalletModal();
+  const pathname = usePathname(); const { publicKey, connected, disconnect } = useWallet();
   const { snapshot, selectedMarket, connectionStatus } = useMarketData();
   const [menu, setMenu] = useState(false), [accountOpen, setAccountOpen] = useState(false), [walletOpen, setWalletOpen] = useState(false), [copied, setCopied] = useState(false);
   const [accounts, setAccounts] = useState<AccountSummary[]>([]);
@@ -41,6 +40,8 @@ export default function Navigation() {
   }, []);
 
   const address = publicKey?.toBase58() || authUser?.walletAddress || ''; const shortAddress = address ? `${address.slice(0, 4)}…${address.slice(-4)}` : '';
+  // Кошелёк подключён, а сессии под него нет (подпись отклонили или autoConnect после перезагрузки) — вместо адреса одна кнопка Sign in.
+  const needsSignIn = connected && (!authUser || authUser.walletAddress !== address);
   const copy = async () => { await navigator.clipboard.writeText(address); setCopied(true); setTimeout(() => setCopied(false), 1800); };
   // Admin-ссылка видна только ADMIN (после ответа /api/auth/me); до ответа и после выхода скрыта.
   const personalLinks = authUser?.role === 'ADMIN' ? [...accountLinks, { name: 'Admin', href: '/admin' }] : accountLinks;
@@ -55,7 +56,7 @@ export default function Navigation() {
           {links.map(l => <Link key={l.href} href={l.href} aria-current={pathname === l.href ? 'page' : undefined} className={pathname === l.href ? 'active' : ''}>{l.name}</Link>)}
         </nav>
         <div className="nav-actions">
-          {connected && (!authUser || authUser.walletAddress !== address) && <button className="wallet-button" onClick={signIn} disabled={signingIn} title="Sign in with your wallet"><LogIn size={15} /><span>{signingIn ? 'Signing…' : 'Sign in'}</span></button>}
+          {needsSignIn && <button className="wallet-button" onClick={() => void signIn()} disabled={signingIn} title="Sign in with your wallet"><LogIn size={15} /><span>{signingIn ? 'Signing…' : 'Sign in'}</span></button>}
           {authUser && <div className="nav-dropdown account-menu">
             <button className="account-button" aria-expanded={accountOpen} aria-haspopup="menu" onClick={() => setAccountOpen(!accountOpen)}>
               <span className="status-dot" /><span>{activeLabel || shortAddress || 'Account'}</span><ChevronDown size={12} />
@@ -82,7 +83,7 @@ export default function Navigation() {
           {/* K3: колокольчик уведомлений — слева от кнопки кошелька, только для вошедшего (компонент сам скрывается без входа). */}
           <NotificationBell />
           {/* После входа адрес уже в меню аккаунта — на десктопе кнопку кошелька прячем (signed-in), на мобильном меню аккаунта скрыто и она остаётся. */}
-          <button className={authUser && connected ? 'wallet-button signed-in' : 'wallet-button'} onClick={() => connected ? setWalletOpen(true) : setVisible(true)}><Wallet size={15} /><span>{connected ? shortAddress : 'Connect wallet'}</span></button>
+          {!needsSignIn && <button className={authUser && connected ? 'wallet-button signed-in' : 'wallet-button'} onClick={() => connected ? setWalletOpen(true) : void signIn()}><Wallet size={15} /><span>{connected ? shortAddress : 'Connect wallet'}</span></button>}
           <button className="mobile-menu-button" aria-label={menu ? 'Close navigation' : 'Open navigation'} aria-expanded={menu} onClick={() => setMenu(!menu)}>{menu ? <X size={20} /> : <Menu size={20} />}</button>
         </div>
       </div>
