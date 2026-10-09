@@ -125,7 +125,7 @@ export default function NotificationBell() {
                 {!n.readAt && <i className="status-dot" style={{ marginTop: 6, flexShrink: 0 }} />}
                 <span style={{ minWidth: 0 }}>
                   <b style={{ display: 'block', fontSize: 12, fontWeight: n.readAt ? 400 : 600, color: n.readAt ? '#a49bad' : '#eeedf4' }}>{n.title}</b>
-                  <small style={{ display: 'block', marginTop: 3, fontSize: 11, lineHeight: 1.45, color: 'var(--muted)' }}>{n.body}</small>
+                  <small style={{ display: 'block', marginTop: 3, fontSize: 11, lineHeight: 1.45, color: 'var(--muted)', overflowWrap: 'anywhere' }}>{n.body}</small>
                   <small style={{ display: 'block', marginTop: 4, font: '10px ui-monospace,monospace', color: '#77717f' }}>{ago(n.createdAt)}</small>
                 </span>
                 {n.readAt && <Check size={12} style={{ marginLeft: 'auto', flexShrink: 0, color: '#5c5568' }} />}
