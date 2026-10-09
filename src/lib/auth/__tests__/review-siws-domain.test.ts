@@ -75,3 +75,12 @@ test('SIWS message signed for a foreign domain must be rejected (domain check)',
   assert.equal(res.status, 401, 'подпись под чужим доменом не должна приниматься');
   assert.equal(await db.session.count(), 0, 'сессия за чужой домен не выдаётся');
 });
+
+// Phantom сверяет origin из URI с origin страницы: локальный стенд — http, прод — https.
+test('siwsUri: http для localhost/127.0.0.1, https для остальных доменов', async () => {
+  const { siwsUri } = await import('../siws');
+  assert.equal(siwsUri('localhost:3300'), 'http://localhost:3300');
+  assert.equal(siwsUri('127.0.0.1'), 'http://127.0.0.1');
+  assert.equal(siwsUri('props.example'), 'https://props.example');
+  assert.equal(siwsUri('localhost.evil.example'), 'https://localhost.evil.example');
+});

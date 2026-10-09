@@ -37,6 +37,13 @@ export function siwsDomainCandidates(host: string | null): string[] {
   return list;
 }
 
+// Phantom отклоняет SIWS без окна (-32000), если origin из URI не совпадает с origin страницы
+// или Chain ID не совпадает с сетью кошелька. Поэтому Chain ID не пишем (поле необязательное,
+// вход от сети не зависит), а локальный стенд открыт по http, всё остальное — https.
+export function siwsUri(domain: string): string {
+  return `${/^(localhost|127\.0\.0\.1)(:\d+)?$/i.test(domain) ? 'http' : 'https'}://${domain}`;
+}
+
 export function createSiwsMessage({ domain, wallet, nonce, issuedAt }: SiwsParams): string {
   return [
     `${domain} wants you to sign in with your Solana account:`,
@@ -44,9 +51,8 @@ export function createSiwsMessage({ domain, wallet, nonce, issuedAt }: SiwsParam
     '',
     'By signing, you authenticate with PROPS. This request will not trigger a blockchain transaction or cost any fees.',
     '',
-    `URI: https://${domain}`,
+    `URI: ${siwsUri(domain)}`,
     'Version: 1',
-    'Chain ID: solana:mainnet',
     `Nonce: ${nonce}`,
     `Issued At: ${issuedAt}`,
   ].join('\n');
