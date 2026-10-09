@@ -1,4 +1,5 @@
 'use client';
+import { useAuth } from '@/lib/auth/AuthContext';
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { AlertTriangle, CheckCircle2 } from 'lucide-react';
@@ -82,13 +83,16 @@ export default function TerminalPage() {
     }
   }, []);
 
+  const { user } = useAuth();
   useEffect(() => {
+    // Без входа счёт не запрашиваем: API ответит 401, а таймер слал бы запросы впустую.
+    if (!user) { setAccountData(null); return; }
     loadAccount();
     // Refresh the read model so server-side fills (limit orders, risk ticks)
     // show up without any browser-side execution trigger.
     const interval = setInterval(loadAccount, ACCOUNT_REFRESH_MS);
     return () => clearInterval(interval);
-  }, [loadAccount]);
+  }, [loadAccount, user]);
 
   // Handle Order Submit
   const handlePlaceOrder = async (order: OrderIntent) => {

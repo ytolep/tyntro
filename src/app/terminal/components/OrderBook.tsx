@@ -28,7 +28,7 @@ export default function OrderBook({ selectedMarket, orderBook, snapshot, current
 
         <div className="mb-3 text-[10px] text-gray-400 space-y-1">
           <div>{selectedMarket.type === 'perp' ? 'Phoenix Perps · live L2' : 'Phoenix Spot · on-chain L2'}</div>
-          <div>{snapshot ? `Source slot ${snapshot.slot.toLocaleString()} · refreshed every 2.5s` : 'Waiting for verified source data'}</div>
+          <div>{snapshot ? `Source slot ${snapshot.slot.toLocaleString()} · live` : 'Waiting for verified source data'}</div>
         </div>
         {/* Table Column Headers */}
         <div className="grid grid-cols-3 text-[10px] text-gray-500 mb-2">
