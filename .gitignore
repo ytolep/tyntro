@@ -9,3 +9,7 @@ node_modules/
 deploy/backups/
 *.tsbuildinfo
 .DS_Store
+
+# Локальные настройки агентов (Claude Code, pi)
+.claude/
+.pi/
