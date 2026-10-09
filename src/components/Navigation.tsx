@@ -40,7 +40,7 @@ export default function Navigation() {
     document.addEventListener('keydown', close); return () => document.removeEventListener('keydown', close);
   }, []);
 
-  const address = publicKey?.toBase58() || ''; const shortAddress = address ? `${address.slice(0, 4)}…${address.slice(-4)}` : '';
+  const address = publicKey?.toBase58() || authUser?.walletAddress || ''; const shortAddress = address ? `${address.slice(0, 4)}…${address.slice(-4)}` : '';
   const copy = async () => { await navigator.clipboard.writeText(address); setCopied(true); setTimeout(() => setCopied(false), 1800); };
   // Admin-ссылка видна только ADMIN (после ответа /api/auth/me); до ответа и после выхода скрыта.
   const personalLinks = authUser?.role === 'ADMIN' ? [...accountLinks, { name: 'Admin', href: '/admin' }] : accountLinks;
@@ -61,6 +61,9 @@ export default function Navigation() {
               <span className="status-dot" /><span>{activeLabel || shortAddress || 'Account'}</span><ChevronDown size={12} />
             </button>
             {accountOpen && <div className="dropdown-panel accounts-panel" role="menu">
+              <span className="eyebrow">WALLET</span>
+              <button role="menuitem" onClick={copy} title="Copy address"><span>{shortAddress}</span>{copied ? <Check size={13} /> : <Copy size={13} />}</button>
+              <div className="menu-divider" />
               {accounts.length > 0 && <>
                 <span className="eyebrow">YOUR ACCOUNTS</span>
                 {accounts.map(a => <button key={a.id} role="menuitem" onClick={() => { localStorage.setItem('activeAccountId', a.id); window.location.reload(); }}>
@@ -78,7 +81,8 @@ export default function Navigation() {
           </div>}
           {/* K3: колокольчик уведомлений — слева от кнопки кошелька, только для вошедшего (компонент сам скрывается без входа). */}
           <NotificationBell />
-          <button className="wallet-button" onClick={() => connected ? setWalletOpen(true) : setVisible(true)}><Wallet size={15} /><span>{connected ? shortAddress : 'Connect wallet'}</span></button>
+          {/* После входа адрес уже в меню аккаунта — на десктопе кнопку кошелька прячем (signed-in), на мобильном меню аккаунта скрыто и она остаётся. */}
+          <button className={authUser && connected ? 'wallet-button signed-in' : 'wallet-button'} onClick={() => connected ? setWalletOpen(true) : setVisible(true)}><Wallet size={15} /><span>{connected ? shortAddress : 'Connect wallet'}</span></button>
           <button className="mobile-menu-button" aria-label={menu ? 'Close navigation' : 'Open navigation'} aria-expanded={menu} onClick={() => setMenu(!menu)}>{menu ? <X size={20} /> : <Menu size={20} />}</button>
         </div>
       </div>
