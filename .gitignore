@@ -1,15 +1,37 @@
+# Зависимости и сборка
 node_modules/
 .next/
-.env
-.env.local
-!.env.example
-!.env.test
-# Деплой (docs/DEPLOY.md): прод-env с секретами и дампы БД не коммитятся.
-.env.production
-deploy/backups/
 *.tsbuildinfo
-.DS_Store
 
-# Локальные настройки агентов (Claude Code, pi)
+# Env: коммитятся только шаблоны и тестовый (без секретов); остальное — .env, .env.local,
+# .env.production (docs/DEPLOY.md), env с мнемониками для scripts/devnet-real.ts и т.п.
+.env*
+!.env.example
+!.env.production.example
+!.env.test
+
+# Ключи: TLS и кошельки Solana (CLI кладёт id.json / *-keypair.json)
+*.pem
+*.key
+*keypair*.json
+id.json
+
+# Дампы БД (docs/DEPLOY.md)
+deploy/backups/
+*.dump
+*.sql.gz
+
+# Логи
+*.log
+
+# ОС и редакторы
+.DS_Store
+.idea/
+.vscode/
+
+# Локальные инструменты агентов (Claude Code, pi, CodeGraph, Playwright MCP)
 .claude/
 .pi/
+.codegraph/
+.playwright-mcp/
+CLAUDE.local.md
