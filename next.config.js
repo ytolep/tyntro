@@ -3,6 +3,12 @@
 // CSP: 'unsafe-inline'/'unsafe-eval' в script-src нужны самому Next.js
 // (инлайн-бутстрап RSC, dev-HMR); кошельки-расширения браузера живут вне CSP страницы.
 // WebSocket-хосты перечислены явно (никакого wildcard wss: — канал эксфильтрации).
+// RPC кошелька в браузере (баланс, blockhash, подтверждение оплаты) — тот же endpoint,
+// что в SolanaWalletContextProvider; без него devnet-сборка не видит баланс USDC.
+const walletRpc = new URL(
+  process.env.NEXT_PUBLIC_SOLANA_RPC_URL ||
+    `https://api.${process.env.NEXT_PUBLIC_SOLANA_CLUSTER || 'mainnet-beta'}.solana.com`,
+).origin;
 const contentSecurityPolicy = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
@@ -11,7 +17,8 @@ const contentSecurityPolicy = [
   "font-src 'self'",
   'connect-src ' +
     "'self' https://perp-api.phoenix.trade wss://perp-api.phoenix.trade " +
-    'https://*.helius-rpc.com wss://*.helius-rpc.com https://api.mainnet-beta.solana.com',
+    'https://*.helius-rpc.com wss://*.helius-rpc.com https://api.mainnet-beta.solana.com ' +
+    `${walletRpc} ${walletRpc.replace(/^http/, 'ws')}`,
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",
