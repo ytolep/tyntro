@@ -2,6 +2,8 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { Decimal } from '@prisma/client/runtime/library';
+import { evaluateAccount } from '../../core/risk';
+import { d } from '../../core/money';
 import { executionPolicy, assertSimulationAction } from '../policy';
 
 // Тесты режимов счёта и api/orders + api/accounts/active на Postgres
@@ -147,7 +149,70 @@ test('cancel cannot touch another account order', async () => {
   assert.equal((await db.order.findUniqueOrThrow({ where: { id: order.id } })).status, 'CANCELLED');
 });
 
-// Волна 2 (агент I): admin/reset-day удалён; демо-инструменты вернутся в api/admin/*.
-test.todo('demo reset tools cannot mutate funded account or change its mode');
-// Волна 1 (агент A): riskEngine.ts не переносится, риск переезжает на core/risk.evaluateAccount.
-test.todo('evaluation passes only with completed days and closed exposure, never activates funded');
+// Волна 2 (агент I): admin/reset-day удалён; админ решает только судьбу PASSED-челленджа.
+test('admin tools cannot mutate funded account or change its mode; reset-day route is gone', async () => {
+  // Эндпоинта /api/admin/reset-day больше нет — файла маршрута не существует.
+  const missingRoute = '../../../app/api/admin/reset-day/route';
+  await assert.rejects(() => import(missingRoute));
+
+  // Админ-действия funded/approve и funded/reject не трогают существующие FUNDED-счета.
+  await db.user.create({ data: { id: 'admin', walletAddress: 'admin', role: 'ADMIN' } });
+  const adminCookie = `props_session=${await createSession('admin')}`;
+  const approve = (await import('../../../app/api/admin/funded/approve/route')).POST;
+  const reject = (await import('../../../app/api/admin/funded/reject/route')).POST;
+  const post = (handler: (req: Request) => Promise<Response>, accountId: string) =>
+    handler(new Request('http://localhost/api/admin/funded/approve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', cookie: adminCookie },
+      body: JSON.stringify({ accountId }),
+    }));
+
+  for (const accountId of ['funded', 'legacy-funded']) {
+    const before = await db.tradingAccount.findUniqueOrThrow({ where: { id: accountId } });
+    // Одобрить/отклонить можно только PASSED-челлендж → 409, без каких-либо записей.
+    for (const handler of [approve, reject])
+      assert.equal((await post(handler, accountId)).status, 409);
+    const after = await db.tradingAccount.findUniqueOrThrow({ where: { id: accountId } });
+    assert.equal(after.mode, before.mode); // mode FUNDED не «переписан»
+    assert.equal(after.status, before.status);
+    assert.equal(after.phase, before.phase);
+  }
+  // FUNDED-счету не создали дубль phase FUNDED_SIM и не записали решений.
+  assert.equal(await db.tradingAccount.count({ where: { phase: 'FUNDED_SIM' } }), 0);
+  assert.equal(await db.auditLog.count({ where: { action: { in: ['FUNDED_APPROVED', 'FUNDED_REJECTED'] } } }), 0);
+});
+
+// Волна 1 (агент A): риск — чистая функция core/risk.evaluateAccount; юнит-детали в core/__tests__/risk.test.ts.
+test('evaluation passes only with completed days and closed exposure, never activates funded', async () => {
+  // Реальный CHALLENGE-счёт из фикстур + правила его челленджа; equity уже на цели 11000.
+  const acc = await db.tradingAccount.findUniqueOrThrow({ where: { id: 'challenge' } });
+  const ch = await db.challenge.findUniqueOrThrow({ where: { id: acc.challengeId } });
+  const rules = {
+    maxDdPct: ch.maxDdPct, dailyDdPct: ch.dailyDdPct,
+    profitTargetPct: ch.profitTargetPct, minTradingDays: ch.minTradingDays,
+  };
+  const atTarget = {
+    accountSize: acc.accountSize as Decimal, balance: d('11000'), dayStartEquity: d('11000'),
+    rules, maintenanceRatio: 0.5, status: 'ACTIVE',
+  };
+  const openPosition = {
+    pos: { side: 'LONG' as const, quantity: d(1), entryPrice: d(100), leverage: 1, margin: d(100) },
+    mark: d(100),
+  };
+
+  // Открытая экспозиция — не прошёл, даже когда equity уже на цели.
+  assert.equal(evaluateAccount({ ...atTarget, positions: [openPosition], tradingDays: rules.minTradingDays }).passed, false);
+  // Незавершённые дни — не прошёл.
+  assert.equal(evaluateAccount({ ...atTarget, positions: [], tradingDays: rules.minTradingDays - 1 }).passed, false);
+  // Дни завершены, экспозиция закрыта, equity на цели — прошёл.
+  assert.equal(evaluateAccount({ ...atTarget, positions: [], tradingDays: rules.minTradingDays }).passed, true);
+  // Уже не ACTIVE — повторно не «прошёл».
+  assert.equal(evaluateAccount({ ...atTarget, status: 'PASSED', positions: [], tradingDays: rules.minTradingDays }).passed, false);
+
+  // Никакого автоматического funded: оценка — чистая функция, счёт в БД не изменился.
+  const after = await db.tradingAccount.findUniqueOrThrow({ where: { id: 'challenge' } });
+  assert.equal(after.mode, 'CHALLENGE');
+  assert.equal(after.status, 'ACTIVE');
+  assert.equal((after.currentBalance as Decimal).toFixed(2), '10000.00');
+  assert.equal(await db.auditLog.count({ where: { action: 'FUNDED_APPROVED' } }), 0);
+});
