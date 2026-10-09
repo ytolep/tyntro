@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { Keypair } from '@solana/web3.js';
 import { Decimal } from '@prisma/client/runtime/library';
 import { db } from '@/lib/db';
+import { REFUNDS_VERSION, RULES_VERSION, TERMS_VERSION } from '@/lib/legal/versions';
 import { ACCOUNT_SIZES, PLAN_CONFIGS } from '@/lib/pricingConfig';
 import { buildTransferRequestUrl } from './solanaPay';
 import { getPaymentsConfig } from './config';
@@ -48,14 +49,23 @@ export interface CreatedPurchase {
 /** L3: максимум одновременно PENDING-покупок на пользователя (анти-флуд). */
 export const MAX_PENDING_PURCHASES = 3;
 
+/** K2: метаданные согласия, сохраняемые вместе с покупкой (ip/userAgent). */
+export interface ConsentMeta {
+  ip?: string;
+  userAgent?: string;
+}
+
 /**
  * Purchase PENDING с новым reference-ключом и ссылкой Solana Pay.
  * Цена — из строки Challenge (сидится из pricingConfig), не из запроса клиента.
+ * При consent — в той же транзакции создаётся TermsAcceptance с текущими
+ * версиями документов (маршрут уже проверил совпадение) и rulesHash плана.
  */
 export async function createPendingPurchase(
   userId: string,
   accountSize: number,
   planType: string,
+  consent?: ConsentMeta,
 ): Promise<CreatedPurchase> {
   const plan = planType as keyof typeof PLAN_CONFIGS;
   if (!PLAN_CONFIGS[plan] || !(ACCOUNT_SIZES as readonly number[]).includes(accountSize))
@@ -77,7 +87,27 @@ export async function createPendingPurchase(
   const reference = Keypair.generate().publicKey.toBase58();
   const amount = challenge.priceUsd;
   const purchase = await db.purchase.create({
-    data: { userId, challengeId: challenge.id, reference, amountUsdc: amount, status: 'PENDING' },
+    data: {
+      userId,
+      challengeId: challenge.id,
+      reference,
+      amountUsdc: amount,
+      status: 'PENDING',
+      // K2: согласие фиксируется атомарно с покупкой — одного без другого не бывает.
+      ...(consent && {
+        termsAcceptance: {
+          create: {
+            userId,
+            termsVersion: TERMS_VERSION,
+            refundsVersion: REFUNDS_VERSION,
+            rulesVersion: RULES_VERSION,
+            rulesHash: computeRulesHash(challenge),
+            ip: consent.ip,
+            userAgent: consent.userAgent,
+          },
+        },
+      }),
+    },
   });
 
   const cfg = getPaymentsConfig();

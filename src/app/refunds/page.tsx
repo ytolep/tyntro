@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { REFUNDS_VERSION } from '@/lib/legal/versions';
 
 export const metadata = {
   title: 'Refund policy (draft)',
@@ -10,6 +11,7 @@ export default function RefundsPage() {
     <div className="site-container legal-page">
       <span className="eyebrow">LEGAL</span>
       <h1>Refund policy<span>.</span></h1>
+      <p className="legal-lede">Version {REFUNDS_VERSION}</p>
       <div className="u3-draft-banner" role="note">
         <b>Draft — pending legal review.</b> This document is not final and creates no commitments yet. The
         finalized version will be published here before it takes effect.
