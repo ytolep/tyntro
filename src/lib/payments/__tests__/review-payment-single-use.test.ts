@@ -59,6 +59,8 @@ after(async () => { await db?.$disconnect(); });
 test('one on-chain transfer must confirm at most one purchase (multi-reference transaction)', async () => {
   const ata = solanaPay.associatedTokenAddress(treasury, mint);
   const p1 = await purchase.createPendingPurchase(userId, 10000, 'CORE');
+  // p1 старше окна повторной выдачи (15 мин) — p2 получает свой reference.
+  await db.purchase.update({ where: { id: p1.purchaseId }, data: { createdAt: new Date(Date.now() - 16 * 60_000) } });
   const p2 = await purchase.createPendingPurchase(userId, 10000, 'CORE');
 
   // Один перевод 89 USDC; RPC для ОБЕИХ reference возвращает одну и ту же

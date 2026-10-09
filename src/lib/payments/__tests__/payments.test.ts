@@ -199,8 +199,11 @@ test('transfer request url matches Solana Pay spec; transferChecked with wrong a
 
 test('at most 3 pending purchases per user; expiry frees the slots (L3)', async () => {
   const flood = await db.user.create({ data: { walletAddress: 'pay-flood' } });
-  for (let i = 0; i < purchase.MAX_PENDING_PURCHASES; i++)
+  for (let i = 0; i < purchase.MAX_PENDING_PURCHASES; i++) {
     await purchase.createPendingPurchase(flood.id, 10000, 'CORE');
+    // Старше окна повторной выдачи (15 мин), но не просрочены — следующий вызов создаёт новую.
+    await db.purchase.updateMany({ where: { userId: flood.id }, data: { createdAt: new Date(Date.now() - 16 * 60_000) } });
+  }
 
   await assert.rejects(
     () => purchase.createPendingPurchase(flood.id, 10000, 'CORE'),
@@ -216,4 +219,18 @@ test('at most 3 pending purchases per user; expiry frees the slots (L3)', async 
   assert.equal(res.expired, purchase.MAX_PENDING_PURCHASES);
   const again = await purchase.createPendingPurchase(flood.id, 10000, 'CORE');
   assert.ok(again.purchaseId);
+});
+
+test('повторный checkout того же плана отдаёт ту же свежую PENDING, а не упирается в лимит', async () => {
+  const u = await db.user.create({ data: { walletAddress: 'pay-reload' } });
+  const first = await purchase.createPendingPurchase(u.id, 10000, 'CORE');
+  for (let i = 0; i < purchase.MAX_PENDING_PURCHASES + 1; i++)
+    assert.equal((await purchase.createPendingPurchase(u.id, 10000, 'CORE')).purchaseId, first.purchaseId);
+  assert.equal(await db.purchase.count({ where: { userId: u.id } }), 1);
+
+  // Старше 15 минут — уже не отдаём: создаётся новая со своим reference.
+  await db.purchase.update({ where: { id: first.purchaseId }, data: { createdAt: new Date(Date.now() - 16 * 60_000) } });
+  const next = await purchase.createPendingPurchase(u.id, 10000, 'CORE');
+  assert.notEqual(next.purchaseId, first.purchaseId);
+  assert.notEqual(next.reference, first.reference);
 });

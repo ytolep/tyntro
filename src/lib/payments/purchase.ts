@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { Keypair } from '@solana/web3.js';
 import { Decimal } from '@prisma/client/runtime/library';
+import type { Challenge } from '@prisma/client';
 import { db } from '@/lib/db';
 import { REFUNDS_VERSION, RULES_VERSION, TERMS_VERSION } from '@/lib/legal/versions';
 import { ACCOUNT_SIZES, PLAN_CONFIGS } from '@/lib/pricingConfig';
@@ -56,7 +57,7 @@ export interface ConsentMeta {
 }
 
 /**
- * Purchase PENDING с новым reference-ключом и ссылкой Solana Pay.
+ * Purchase PENDING с новым reference-ключом (или свежая PENDING того же плана) и ссылкой Solana Pay.
  * Цена — из строки Challenge (сидится из pricingConfig), не из запроса клиента.
  * При consent — в той же транзакции создаётся TermsAcceptance с текущими
  * версиями документов (маршрут уже проверил совпадение) и rulesHash плана.
@@ -76,6 +77,40 @@ export async function createPendingPurchase(
   });
   if (!challenge) throw new CheckoutError(409, 'Challenge is not configured');
 
+  // Checkout создаёт покупку при каждом открытии страницы: свежая PENDING того же плана
+  // по той же цене отдаётся повторно, иначе три перезагрузки упираются в лимит L3.
+  const reusable = await db.purchase.findFirst({
+    where: {
+      userId,
+      challengeId: challenge.id,
+      status: 'PENDING',
+      amountUsdc: challenge.priceUsd,
+      createdAt: { gt: new Date(Date.now() - REUSE_PENDING_MS) },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+  const purchase = reusable ?? (await createPurchaseRow(userId, challenge, consent));
+
+  const cfg = getPaymentsConfig();
+  const payUrl = buildTransferRequestUrl({
+    recipient: cfg.treasuryWallet,
+    amount: purchase.amountUsdc,
+    splToken: cfg.usdcMint,
+    reference: purchase.reference,
+    label: 'PROPS',
+    message: `PROPS ${plan} challenge ${accountSize}`,
+  });
+  return { purchaseId: purchase.id, reference: purchase.reference, amount: purchase.amountUsdc, payUrl };
+}
+
+/** Повторно отдаём только покупку моложе 15 мин: воркер просрочивает через 30 (PURCHASE_EXPIRE_MS), остаток — на оплату. */
+const REUSE_PENDING_MS = 15 * 60 * 1000;
+
+async function createPurchaseRow(
+  userId: string,
+  challenge: Challenge,
+  consent: ConsentMeta | undefined,
+) {
   // L3: каждая PENDING-покупка — цикл RPC-вызовов в воркере каждые 15 с;
   // просроченные уходят в EXPIRED и освобождают слоты.
   // ponytail: check-then-insert, гонка может выпустить лишнюю PENDING — потолок
@@ -84,14 +119,12 @@ export async function createPendingPurchase(
   if (pendingCount >= MAX_PENDING_PURCHASES)
     throw new CheckoutError(409, 'Too many pending purchases: pay or wait for expiry');
 
-  const reference = Keypair.generate().publicKey.toBase58();
-  const amount = challenge.priceUsd;
-  const purchase = await db.purchase.create({
+  return db.purchase.create({
     data: {
       userId,
       challengeId: challenge.id,
-      reference,
-      amountUsdc: amount,
+      reference: Keypair.generate().publicKey.toBase58(),
+      amountUsdc: challenge.priceUsd,
       status: 'PENDING',
       // K2: согласие фиксируется атомарно с покупкой — одного без другого не бывает.
       ...(consent && {
@@ -109,15 +142,4 @@ export async function createPendingPurchase(
       }),
     },
   });
-
-  const cfg = getPaymentsConfig();
-  const payUrl = buildTransferRequestUrl({
-    recipient: cfg.treasuryWallet,
-    amount,
-    splToken: cfg.usdcMint,
-    reference,
-    label: 'PROPS',
-    message: `PROPS ${plan} challenge ${accountSize}`,
-  });
-  return { purchaseId: purchase.id, reference, amount, payUrl };
 }
