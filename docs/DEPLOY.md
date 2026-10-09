@@ -60,6 +60,16 @@ docker compose --env-file .env.production -f deploy/docker-compose.prod.yml \
   logs -f caddy web
 ```
 
+Мониторинг воркера: `/api/health`. Воркер раз в 5 с обновляет строку
+`WorkerHeartbeat` (`id='main'`): времена последнего завершённого тика риска,
+проверки оплат и смены дня. `/api/health` отвечает `200 {status:'ok', db, worker:{ok,
+lastTickAgeMs, lastPaymentsCheckAgeMs}}`, пока тик свежее 30 с и проверка оплат
+свежее 90 с; старее — `503 {status:'degraded'}` (нет строки — тоже 503), так
+healthcheck/мониторинг видит зависание или падение воркера. Контейнер **web** в
+`deploy/docker-compose.prod.yml` проверяет `?scope=web` (только БД): падение
+воркера не рестартует web — страницы и API работают, рестартовать нужно воркер
+(`docker compose ... restart worker`, причину — в `logs worker`).
+
 Caddy хранит сертификаты в volume `caddy_data`: перевыпуск автоматический,
 при `down` (без `-v`) ничего не теряется. **В проде никогда не используйте
 `down -v`** — это удалит базу и сертификаты.

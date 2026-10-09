@@ -274,3 +274,14 @@ model Notification {
 
   @@index([userId, createdAt])
 }
+
+// Q1: живость воркера. Воркер раз в 5 с upsert'ит строку id='main';
+// /api/health отвечает 503 degraded, если тик или проверка оплат устарели.
+model WorkerHeartbeat {
+  id                  String    @id
+  lastTickAt          DateTime
+  lastPaymentsCheckAt DateTime?
+  lastDayRollCheckAt  DateTime?
+  pid                 Int
+  startedAt           DateTime
+}

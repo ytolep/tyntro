@@ -8,6 +8,7 @@ import { runDayRoll, DAY_ROLL_CHECK_MS } from './dayRoll';
 import { checkPendingPayments } from './payments';
 import { createSolanaRpc } from '../lib/payments/solanaPay';
 import { jsonLog } from './log';
+import { markDoneAfter, writeHeartbeat, HEARTBEAT_INTERVAL_MS } from './heartbeat';
 
 const RISK_TICK_MS = 1_000;
 export const PAYMENTS_CHECK_MS = 15_000;
@@ -41,13 +42,16 @@ async function loop(name: string, intervalMs: number, step: () => Promise<unknow
   jsonLog('info', `${name}: цикл остановлен`);
 }
 
+// Шаги обёрнуты markDoneAfter: heartbeat хранит время последнего ЗАВЕРШЁННОГО
+// тика/проверки — упавшая итерация не обновляет время, и /api/health видит 503.
 const loops = Promise.all([
-  loop('riskTick', RISK_TICK_MS, () => runRiskTick()),
-  loop('payments', PAYMENTS_CHECK_MS, () => checkPendingPayments({ rpc: paymentsRpc })),
-  loop('dayRoll', DAY_ROLL_CHECK_MS, () => runDayRoll()),
+  loop('riskTick', RISK_TICK_MS, markDoneAfter('tick', () => runRiskTick())),
+  loop('payments', PAYMENTS_CHECK_MS, markDoneAfter('payments', () => checkPendingPayments({ rpc: paymentsRpc }))),
+  loop('dayRoll', DAY_ROLL_CHECK_MS, markDoneAfter('dayRoll', () => runDayRoll())),
+  loop('heartbeat', HEARTBEAT_INTERVAL_MS, () => writeHeartbeat(process.pid)),
 ]);
 
-jsonLog('info', 'worker запущен', { pid: process.pid, riskTickMs: RISK_TICK_MS, paymentsCheckMs: PAYMENTS_CHECK_MS, dayRollCheckMs: DAY_ROLL_CHECK_MS });
+jsonLog('info', 'worker запущен', { pid: process.pid, riskTickMs: RISK_TICK_MS, paymentsCheckMs: PAYMENTS_CHECK_MS, dayRollCheckMs: DAY_ROLL_CHECK_MS, heartbeatMs: HEARTBEAT_INTERVAL_MS });
 
 let exiting = false;
 function shutdown(signal: string): void {
