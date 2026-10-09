@@ -5,8 +5,9 @@ import { ConnectionProvider, WalletProvider } from '@solana/wallet-adapter-react
 import { WalletModalProvider } from '@solana/wallet-adapter-react-ui';
 import { clusterApiUrl } from '@solana/web3.js';
 
-import '@solana/wallet-adapter-react-ui/styles.css';
-
+// Стили кошелька НЕ импортируем из пакета: styles.css делает @import Google Fonts,
+// который блокирует CSP. Правила .wallet-adapter-* перенесены в globals.css
+// (блок /* Q4 wallet-adapter */) без @import, с font-family: inherit.
 export const SolanaWalletContextProvider: FC<{ children: ReactNode }> = ({ children }) => {
   // Сеть кошелька: свой RPC (например devnet для тестов оплаты checkout), иначе
   // публичный кластер NEXT_PUBLIC_SOLANA_CLUSTER. Рыночные данные Phoenix
