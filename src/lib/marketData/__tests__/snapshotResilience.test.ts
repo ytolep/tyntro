@@ -24,7 +24,14 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
   return json({ jsonrpc: '2.0', id: body.id, result: Math.floor((Date.now() - (slot - requested) * 400) / 1000) });
 }) as typeof fetch;
 
-test.after(() => { globalThis.fetch = realFetch; });
+// WS-поток здесь недоступен (конструктор падает) — работает запасной REST-путь.
+const realWebSocket = globalThis.WebSocket;
+class OfflineWebSocket {
+  constructor() { throw new Error('offline'); }
+}
+globalThis.WebSocket = OfflineWebSocket as unknown as typeof WebSocket;
+
+test.after(() => { globalThis.fetch = realFetch; globalThis.WebSocket = realWebSocket; });
 
 test('serves the last fresh snapshot when Phoenix fails, and pauses upstream after 429', async (t) => {
   const { getMarketSnapshot } = await import('../server');

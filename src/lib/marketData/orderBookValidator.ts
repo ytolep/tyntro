@@ -35,3 +35,24 @@ export function normalizeOrderBook(
   if (![spread, midPrice, spreadPct, timestamp].every(Number.isFinite)) return null;
   return { bids, asks, spread, midPrice, spreadPct, timestamp };
 }
+
+/** Разбор сторон стакана из формата Phoenix [[price, size], ...] с валидацией
+ *  normalizeOrderBook: кривые или скрещённые книги отклоняются (null), не чинятся.
+ *  Общий путь для REST (parsePerpBook в server.ts) и WebSocket (phoenixStream). */
+export function parseOrderBookSides(bids: unknown, asks: unknown, timestamp: number): NormalizedOrderBook | null {
+  function side(value: unknown): RawLevel[] | null {
+    if (!Array.isArray(value)) return null;
+    const levels: RawLevel[] = [];
+    for (const row of value) {
+      if (!Array.isArray(row) || row.length !== 2) return null;
+      const [price, size] = row;
+      if (typeof price !== 'number' || !Number.isFinite(price) || price <= 0 ||
+          typeof size !== 'number' || !Number.isFinite(size) || size < 0) return null;
+      levels.push({ price, size });
+    }
+    return levels;
+  }
+  const rawBids = side(bids), rawAsks = side(asks);
+  if (!rawBids || !rawAsks) return null;
+  return normalizeOrderBook(rawBids, rawAsks, undefined, undefined, timestamp);
+}

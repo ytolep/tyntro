@@ -3,7 +3,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { Market, MarketSnapshot, ConnectionStatus, isFreshSnapshot } from './types';
 import { PhoenixSpotAdapter } from './adapters/PhoenixSpotAdapter';
 import { PhoenixPerpAdapter } from './adapters/PhoenixPerpAdapter';
-import { pollMarket } from './pollMarket';
+import { streamMarket } from './pollMarket';
 import { DEFAULT_MARKET } from './markets';
 
 function useMarketDataState() {
@@ -40,7 +40,8 @@ function useMarketDataState() {
     setSnapshot(null);
     if (!markets.length) { setConnectionStatus('disconnected'); return; }
     const adapter = selectedMarket.type === 'spot' ? new PhoenixSpotAdapter(selectedMarket) : new PhoenixPerpAdapter(selectedMarket);
-    return pollMarket(selectedMarket.symbol, signal => adapter.fetchSnapshot(signal), setSnapshot, setConnectionStatus);
+    // M2: по умолчанию SSE-поток, при ошибке EventSource — откат на поллинг внутри streamMarket.
+    return streamMarket(selectedMarket.symbol, signal => adapter.fetchSnapshot(signal), setSnapshot, setConnectionStatus);
   }, [selectedMarket, markets.length]);
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);

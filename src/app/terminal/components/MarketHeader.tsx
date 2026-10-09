@@ -1,6 +1,7 @@
 'use client';
 import { useMemo, useState } from 'react';
 import { ChevronDown, Search } from 'lucide-react';
+import { useMarketData } from '@/lib/marketData/MarketDataStore';
 import type { ConnectionStatus, Market, NormalizedOrderBook } from '@/lib/marketData/types';
 
 interface MarketHeaderProps {
@@ -24,6 +25,8 @@ export default function MarketHeader({
   orderBook,
   onSelectMarket,
 }: MarketHeaderProps) {
+  // Ticker — из того же MarketDataProvider, страницу терминала не трогаем.
+  const { ticker } = useMarketData();
   const [showSymbolDropdown, setShowSymbolDropdown] = useState<boolean>(false);
   const [marketSearch, setMarketSearch] = useState<string>('');
 
@@ -46,6 +49,11 @@ export default function MarketHeader({
       : orderBook.spread > 0
         ? `$${orderBook.spread.toFixed(priceDigits)}`
         : null;
+
+  const compactNumber = (value: number) =>
+    value.toLocaleString('en-US', { notation: 'compact', maximumFractionDigits: 2 });
+  const price = (value: number) =>
+    value.toLocaleString('en-US', { minimumFractionDigits: priceDigits, maximumFractionDigits: priceDigits });
 
   return (
     <div className="bg-[#101015] border-b border-[#25252e] px-4 py-2 flex flex-wrap items-center justify-between gap-4 text-xs">
@@ -129,6 +137,42 @@ export default function MarketHeader({
               {spreadLabel ?? '—'}
             </span>
           </div>
+
+          {/* WS-поток: честные поля канала market — каждое только при наличии значения */}
+          {ticker?.indexPrice != null && (
+            <div>
+              <span className="text-gray-500 text-[10px] block">Index</span>
+              <span className="font-bold text-white">${price(ticker.indexPrice)}</span>
+            </div>
+          )}
+          {ticker?.change24h != null && (
+            <div>
+              <span className="text-gray-500 text-[10px] block">24h Change</span>
+              <span className={`font-bold ${ticker.change24h > 0 ? 'text-[#8ff0cc]' : ticker.change24h < 0 ? 'text-[#ef8390]' : 'text-white'}`}>
+                {ticker.change24h >= 0 ? '+' : ''}{ticker.change24h.toFixed(2)}%
+              </span>
+            </div>
+          )}
+          {ticker?.volume24h != null && (
+            <div>
+              <span className="text-gray-500 text-[10px] block">24h Volume</span>
+              <span className="font-bold text-white">${compactNumber(ticker.volume24h)}</span>
+            </div>
+          )}
+          {ticker?.openInterest != null && (
+            <div>
+              <span className="text-gray-500 text-[10px] block">Open Interest</span>
+              <span className="font-bold text-white">{compactNumber(ticker.openInterest)}</span>
+            </div>
+          )}
+          {ticker?.fundingRate != null && (
+            <div>
+              <span className="text-gray-500 text-[10px] block">Funding</span>
+              <span className={`font-bold ${ticker.fundingRate > 0 ? 'text-[#8ff0cc]' : ticker.fundingRate < 0 ? 'text-[#ef8390]' : 'text-white'}`}>
+                {(ticker.fundingRate * 100).toFixed(4)}%
+              </span>
+            </div>
+          )}
         </div>
       </div>
 

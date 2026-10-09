@@ -12,6 +12,12 @@ let server: typeof import('../server');
 const SLOT = 450_148_371;
 const realFetch = globalThis.fetch;
 const realNow = Date.now;
+// WS-поток в этих тестах недоступен: конструктор всегда падает — getMarketSnapshot
+// сразу уходит в запасной REST-путь, который здесь и проверяется.
+const realWebSocket = globalThis.WebSocket;
+class OfflineWebSocket {
+  constructor() { throw new Error('offline'); }
+}
 let fakeNow = realNow();
 let mode: 'ok' | 'down500' | 'rate429' = 'ok';
 let retryAfter: string | null = null;
@@ -42,12 +48,14 @@ async function fetchStub(url: string | URL | RequestInfo, init?: RequestInit): P
 
 test.before(async () => {
   globalThis.fetch = fetchStub as typeof fetch;
+  globalThis.WebSocket = OfflineWebSocket as unknown as typeof WebSocket;
   Date.now = () => fakeNow;
   server = await import('../server');
 });
 test.beforeEach(() => { mode = 'ok'; retryAfter = null; });
 test.after(() => {
   globalThis.fetch = realFetch;
+  globalThis.WebSocket = realWebSocket;
   Date.now = realNow;
 });
 

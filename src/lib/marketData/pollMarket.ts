@@ -41,3 +41,58 @@ export function pollMarket(
   void poll();
   return () => { stopped = true; controller?.abort(); clearTimeout(timer); };
 }
+
+// M2: рынок по умолчанию — SSE /api/phoenix/stream (серверный WebSocket-поток).
+// Ошибки/тишина EventSource — откат на текущий поллинг (fetchSnapshot). Проверки
+// свежести и монотонности слота на клиенте сохранены как в pollMarket.
+export function streamMarket(
+  symbol: string,
+  fetchSnapshot: (signal: AbortSignal) => Promise<MarketSnapshot>,
+  onData: (value: MarketSnapshot | null) => void,
+  onStatus: (value: 'connected' | 'error' | 'connecting' | 'reconnecting') => void,
+  options: { firstMessageMs?: number; maxFailures?: number } = {},
+): () => void {
+  const firstMessageMs = options.firstMessageMs ?? 10_000;
+  const maxFailures = options.maxFailures ?? 3;
+  let stopped = false, gotFirst = false, failures = 0;
+  let last: MarketSnapshot | null = null;
+  let source: EventSource | null = null;
+  let stopPoll: (() => void) | null = null;
+  let firstTimer: ReturnType<typeof setTimeout> | undefined;
+  const fallbackToPolling = () => {
+    if (stopped || stopPoll) return;
+    source?.close();
+    stopPoll = pollMarket(symbol, fetchSnapshot, onData, onStatus);
+  };
+  try {
+    source = new EventSource(`/api/phoenix/stream?symbol=${encodeURIComponent(symbol)}`);
+  } catch {
+    fallbackToPolling();
+    return () => { stopped = true; stopPoll?.(); };
+  }
+  firstTimer = setTimeout(() => { if (!gotFirst) fallbackToPolling(); }, firstMessageMs);
+  source.onmessage = (event: MessageEvent<string>) => {
+    if (stopped || stopPoll) return;
+    let snapshot: MarketSnapshot;
+    try { snapshot = JSON.parse(event.data); } catch { return; }
+    if (!isFreshSnapshot(snapshot, symbol) || snapshot.slot < (last?.slot ?? -1)) return; // честность на клиенте
+    gotFirst = true;
+    failures = 0;
+    last = snapshot;
+    onData(snapshot); onStatus('connected');
+  };
+  source.onerror = () => {
+    if (stopped || stopPoll) return;
+    failures++;
+    // M1: последний свежий снапшот держим, пока он свеж; прочерк — только после.
+    const keep = last && isFreshSnapshot(last, symbol) ? last : null;
+    onData(keep); onStatus(keep ? 'reconnecting' : 'error');
+    if (failures >= maxFailures) fallbackToPolling();
+  };
+  return () => {
+    stopped = true;
+    clearTimeout(firstTimer);
+    source?.close();
+    stopPoll?.();
+  };
+}
