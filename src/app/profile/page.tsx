@@ -29,6 +29,7 @@ interface PayoutRow {
 
 interface Overview {
   walletAddress: string;
+  kycStatus: string;
   accounts: FundedAccountRow[];
   payouts: PayoutRow[];
 }
@@ -71,7 +72,13 @@ export default function ProfilePage() {
       if (!res.ok) {
         setMessage((m) => ({ ...m, [account.id]: body.error ?? 'Request failed' }));
       } else {
-        setMessage((m) => ({ ...m, [account.id]: 'Payout requested' }));
+        setMessage((m) => ({
+          ...m,
+          [account.id]:
+            body.kycStatus === 'VERIFIED'
+              ? 'Payout requested'
+              : 'Payout requested — identity verification (KYC) required before approval',
+        }));
         setAmounts((a) => ({ ...a, [account.id]: '' }));
         load();
       }
@@ -134,6 +141,16 @@ export default function ProfilePage() {
           Funded stage <ArrowUpRight size={16} />
         </Link>
       </div>
+
+      {/* Q2: статус ручной верификации — перед первой выплатой личность проверяем вручную. */}
+      {data.kycStatus === 'VERIFIED' ? (
+        <p className="text-[13px] text-profit">Identity verification: verified — your payouts can be approved.</p>
+      ) : (
+        <p className={`text-[13px] ${data.kycStatus === 'REJECTED' ? 'text-red-400' : 'text-amber-300'}`}>
+          Identity verification: {data.kycStatus === 'REJECTED' ? 'rejected' : 'not passed yet'}. Before your first
+          payout we verify your identity manually — please contact support.
+        </p>
+      )}
 
       {data.accounts.length === 0 ? (
         <div className="u2-empty">

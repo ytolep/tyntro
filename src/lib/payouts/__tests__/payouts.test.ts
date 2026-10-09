@@ -117,6 +117,12 @@ before(async () => {
   adminCookie = `props_session=${await createSession(adminId)}`;
   strangerCookie = `props_session=${await createSession(strangerId)}`;
 
+  // Q2: выплаты (APPROVED/PAID) требуют пройденного KYC у владельца счёта.
+  await db.user.update({
+    where: { id: traderId },
+    data: { kycStatus: 'VERIFIED', kycVerifiedAt: new Date(), kycVerifiedBy: adminId },
+  });
+
   const challenge = await db.challenge.create({
     data: {
       accountSize: new Decimal(10000), planType: 'CORE',

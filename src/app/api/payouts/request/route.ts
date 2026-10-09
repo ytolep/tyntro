@@ -18,7 +18,8 @@ export async function POST(req: Request) {
     if (typeof accountId !== 'string' || accountId.length === 0)
       return NextResponse.json({ error: 'accountId is required' }, { status: 400 });
     const created = await requestPayout(userId, accountId, amount);
-    return NextResponse.json({ id: created.payoutId, status: 'REQUESTED', availableUsd: created.availableUsd });
+    // Q2: запрос разрешён без KYC, но клиент видит в ответе, что нужна верификация.
+    return NextResponse.json({ id: created.payoutId, status: 'REQUESTED', availableUsd: created.availableUsd, kycStatus: created.kycStatus });
   } catch (error) {
     if (error instanceof PayoutError) return NextResponse.json({ error: error.message }, { status: error.status });
     console.error('Payout request error:', error);

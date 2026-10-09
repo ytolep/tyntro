@@ -14,6 +14,11 @@ model User {
   name          String?
   walletAddress String           @unique
   role          String           @default("USER")
+  // Q2: ручной KYC перед первой выплатой. NONE | VERIFIED | REJECTED.
+  kycStatus     String           @default("NONE")
+  kycVerifiedAt DateTime?
+  kycVerifiedBy String?
+  kycNote       String?
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
   accounts      TradingAccount[]
@@ -265,7 +270,7 @@ model Notification {
   id        String    @id @default(uuid())
   userId    String
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  kind      String // PURCHASE_PAID | ACCOUNT_FAILED | ACCOUNT_PASSED | FUNDED_APPROVED | FUNDED_REJECTED | PAYOUT_APPROVED | PAYOUT_REJECTED | PAYOUT_PAID
+  kind      String // PURCHASE_PAID | ACCOUNT_FAILED | ACCOUNT_PASSED | FUNDED_APPROVED | FUNDED_REJECTED | PAYOUT_APPROVED | PAYOUT_REJECTED | PAYOUT_PAID | KYC_VERIFIED | KYC_REJECTED
   title     String
   body      String
   accountId String?

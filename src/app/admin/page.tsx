@@ -8,6 +8,7 @@ import SignInRequired from '@/components/SignInRequired';
 import { BRAND_NAME } from '@/lib/brand';
 import FundedRowActions from './components/FundedRowActions';
 import PayoutRowActions from './components/PayoutRowActions';
+import KycControl from './components/KycControl';
 
 // Реальные метрики и очереди из /api/admin/metrics и /api/admin/queue (роль ADMIN).
 // Действия: funded approve/reject и payouts/decide — с инлайн-подтверждением вторым
@@ -289,6 +290,7 @@ export default function AdminPage() {
                 <th>Amount</th>
                 <th>Status</th>
                 <th>Requested</th>
+                <th>KYC</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -315,6 +317,13 @@ export default function AdminPage() {
                     </td>
                     <td>{new Date(p.timestamp).toLocaleString()}</td>
                     <td className="k1-cell">
+                      <KycControl
+                        wallet={p.account?.user?.walletAddress}
+                        disabled={busy}
+                        onChanged={() => void load(false)}
+                      />
+                    </td>
+                    <td className="k1-cell">
                       <PayoutRowActions
                         status={p.status}
                         disabled={busy}
@@ -328,7 +337,7 @@ export default function AdminPage() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={7} className="u2-empty-cell">
+                  <td colSpan={8} className="u2-empty-cell">
                     No payout requests pending.
                   </td>
                 </tr>
