@@ -1,0 +1,150 @@
+# Прод-стек PROPS на одном Linux-сервере: db, миграции, web, worker,
+# caddy (HTTPS), бэкап. Сторонних сервисов нет. Наружу открыты только
+# 80/443 у caddy; db и web — исключительно внутри сети стека.
+#
+# Запуск (из корня репозитория, подробно — docs/DEPLOY.md):
+#   cp .env.production.example .env.production   # заполнить
+#   docker compose --env-file .env.production \
+#     -f deploy/docker-compose.prod.yml up -d --build
+#
+# Локальная проверка без домена и root-портов: deploy/local-check.sh.
+name: props-prod
+
+services:
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-props}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD обязателен}
+      POSTGRES_DB: ${POSTGRES_DB:-props}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # ports отсутствует: 5432 наружу не публикуется, только сеть стека.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-props}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  # Одноразовый: prisma migrate deploy + сид (матрица челленджей,
+  # ADMIN — из ADMIN_WALLET).
+  migrate:
+    build: ..
+    restart: "no"
+    command:
+      - sh
+      - -c
+      - >-
+        ./node_modules/.bin/prisma migrate deploy &&
+        node --import tsx prisma/seed.ts
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL обязателен}
+      ADMIN_WALLET: ${ADMIN_WALLET:-}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    build: ..
+    restart: unless-stopped
+    # Порт 3000 только внутри сети стека; наружу трафик идёт через caddy.
+    expose:
+      - "3000"
+    # NEXT_PUBLIC_* сюда не ставим: они инлайнятся в браузерный бандл при
+    # сборке образа, runtime-env на них не влияет (.env.production.example).
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?}
+      TREASURY_WALLET: ${TREASURY_WALLET:-}
+      # Дефолт — USDC mainnet, совпадает с дефолтом src/lib/payments/config.ts.
+      USDC_MINT: ${USDC_MINT:-EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v}
+      PAYMENTS_RPC_URL: ${PAYMENTS_RPC_URL:-}
+      SOLANA_RPC_URL: ${SOLANA_RPC_URL:-}
+      # Дефолт задан явно: пустая строка ломает расчёт комиссии (markets.ts).
+      TAKER_FEE_RATE: ${TAKER_FEE_RATE:-0.0005}
+      APP_DOMAINS: ${APP_DOMAINS:-}
+      APP_DOMAIN: ${APP_DOMAIN:-}
+      # Caddy — единственный доверенный прокси перед приложением.
+      TRUSTED_IP_HEADER: ${TRUSTED_IP_HEADER:-x-forwarded-for}
+      TRUSTED_PROXY_COUNT: ${TRUSTED_PROXY_COUNT:-1}
+      BLOCKED_COUNTRIES: ${BLOCKED_COUNTRIES:-}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - >-
+          fetch('http://127.0.0.1:3000/api/health')
+          .then(r => process.exit(r.status === 200 ? 0 : 1))
+          .catch(() => process.exit(1))
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  # Воркер: тик риска раз в 1 с, оплаты раз в 15 с, смена дня в 00:00 UTC.
+  worker:
+    build: ..
+    restart: unless-stopped
+    command: ["./node_modules/.bin/tsx", "src/worker/index.ts"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?}
+      TREASURY_WALLET: ${TREASURY_WALLET:-}
+      USDC_MINT: ${USDC_MINT:-EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v}
+      PAYMENTS_RPC_URL: ${PAYMENTS_RPC_URL:-}
+      SOLANA_RPC_URL: ${SOLANA_RPC_URL:-}
+      TAKER_FEE_RATE: ${TAKER_FEE_RATE:-0.0005}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  # TLS-терминал: Let's Encrypt для домена из DOMAIN, внутренний CA для
+  # localhost. IP клиента пробрасывается стандартным X-Forwarded-For
+  # (последний элемент = добавленный Caddy) — отсюда TRUSTED_* в web.
+  # HTTP_PORT/HTTPS_PORT переопределяются только для локальной проверки.
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-80}:80" # challenge HTTP-01 и редирект на https
+      - "${HTTPS_PORT:-443}:443"
+      - "${HTTPS_PORT:-443}:443/udp" # HTTP/3
+    environment:
+      DOMAIN: ${DOMAIN:?DOMAIN обязателен}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data # сертификаты: не терять между обновлениями
+      - caddy_config:/config
+    depends_on:
+      web:
+        condition: service_healthy
+
+  # Ежедневный pg_dump -Fc в ./backups с ротацией; цикл — в deploy/backup.sh.
+  # Тот же сервис используется restore.sh для pg_restore (entrypoint exec'ит
+  # переданные аргументы вместо цикла).
+  backup:
+    image: postgres:17
+    restart: unless-stopped
+    entrypoint: ["/usr/local/bin/backup.sh"]
+    environment:
+      PGHOST: db
+      PGPORT: "5432"
+      PGUSER: ${POSTGRES_USER:-props}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?}
+      PGDATABASE: ${POSTGRES_DB:-props}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+      BACKUP_INTERVAL_SECONDS: "86400"
+    volumes:
+      - ./backup.sh:/usr/local/bin/backup.sh:ro
+      - ./backups:/backups
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
