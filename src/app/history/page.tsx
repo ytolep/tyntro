@@ -1,6 +1,7 @@
 'use client';
 import { activeAccountUrl } from '@/lib/activeAccount';
-import { num, usd } from '@/lib/display';
+import { num } from '@/lib/display';
+import { formatUsd } from '@/lib/format';
 import { FundedWorkspace } from '@/components/AccountModeNotice';
 import { useAccountPage, WorkspaceSkeleton, LoadError, NoAccount, SignInRequired } from '@/app/dashboard/accountPage';
 
@@ -35,8 +36,8 @@ export default function HistoryPage() {
                 <td className="cell-strong">{ord.symbol}</td>
                 <td><span className={ord.side === 'LONG' ? '!text-profit' : '!text-loss'}>{ord.side}</span></td>
                 <td className="cell-muted">{ord.type}</td>
-                <td>{usd(num(ord.price))}</td>
-                <td>{usd(num(ord.size))}</td>
+                <td>{formatUsd(ord.price)}</td>
+                <td>{formatUsd(ord.size)}</td>
                 <td>{num(ord.leverage)}×</td>
                 <td className="cell-muted">{ord.status}</td>
               </tr>
