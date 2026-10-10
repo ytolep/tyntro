@@ -26,6 +26,7 @@ import { Keypair } from '@solana/web3.js';
 import bs58 from 'bs58';
 import { checkPendingPayments } from '../src/worker/payments';
 import { associatedTokenAddress, USDC_DECIMALS } from '../src/lib/payments/solanaPay';
+import { TERMS_VERSION, REFUNDS_VERSION, RULES_VERSION } from '../src/lib/legal/versions';
 
 const BASE_URL = process.env.BASE_URL ?? 'http://localhost:3100';
 const DATABASE_URL = process.env.DATABASE_URL ?? '';
@@ -252,7 +253,15 @@ async function main(): Promise<void> {
 
     ['POST /api/checkout/create: покупка SPRINT $5K ($23), PENDING + Solana Pay URL', async () => {
       const res = await http('POST', '/api/checkout/create', {
-        json: { accountSize: 5000, planType: 'SPRINT' },
+        json: {
+          accountSize: 5000,
+          planType: 'SPRINT',
+          // K2: покупка требует согласия с текущими версиями документов (terms/refunds/rules).
+          acceptedTerms: true,
+          termsVersion: TERMS_VERSION,
+          refundsVersion: REFUNDS_VERSION,
+          rulesVersion: RULES_VERSION,
+        },
         cookie: S.traderCookie,
       });
       eq(res.status, 200, 'POST /api/checkout/create');
@@ -388,7 +397,18 @@ async function main(): Promise<void> {
       check(S.payoutId.length > 0, 'не вернул id выплаты');
     }],
 
-    ['[тестовый приём] админ PAID с фейковой подписью → PAYOUT −375, баланс 5225, аудит', async () => {
+    ['[тестовый приём] KYC VERIFIED + админ PAID с фейковой подписью → PAYOUT −375, баланс 5225, аудит', async () => {
+      // Q2: PAID требует kycStatus VERIFIED у владельца — верифицируем трейдера
+      // реальным админ-эндпоинтом (не прямой правкой БД).
+      const fundedAcc = await prisma.tradingAccount.findUniqueOrThrow({
+        where: { id: S.fundedId },
+        select: { userId: true },
+      });
+      const kycRes = await http('POST', '/api/admin/kyc', {
+        json: { userId: fundedAcc.userId, status: 'VERIFIED' },
+        cookie: S.adminCookie,
+      });
+      eq(kycRes.status, 200, 'POST /api/admin/kyc (VERIFIED)');
       const fakeSignature = Keypair.generate().publicKey.toBase58(); // перевода USDC не было
       const res = await http('POST', '/api/admin/payouts/decide', {
         json: { payoutId: S.payoutId, approve: true, txSignature: fakeSignature },

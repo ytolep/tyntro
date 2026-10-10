@@ -82,6 +82,10 @@ npx tsx scripts/e2e.ts; echo "EXIT=$?"
 запуск создаёт новые кошельки и покупку; для чистой базы пересоздать `props_e2e`
 (`DROP DATABASE props_e2e` + шаги 1–2).
 
+## Прогон 2026-10-10 (Next.js 16.4.0, React 19, Prisma 6.19.3)
+
+Все 16 шагов PASS, `E2E RESULT: PASS`, код выхода 0 (web — `.next/standalone/server.js` на :3111, воркер рядом, база `props_e2e_w10`, цены Phoenix live). Сценарий обновлён под уже действующие правила: шаг 02 передаёт согласие с текущими версиями документов (K2), шаг 12 перед PAID верифицирует KYC трейдера через `POST /api/admin/kyc` (Q2).
+
 ## Вывод прогона (2026-10-09, web Next.js 14.2.35 на :3100, worker рядом, цены Phoenix live)
 
 ```text
