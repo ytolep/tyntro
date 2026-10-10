@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ArrowUpRight, RefreshCw } from 'lucide-react';
 import type { TransparencyReport } from '@/lib/transparency/report';
+import { formatUsd } from '@/lib/format';
 import { BRAND_NAME } from '@/lib/brand';
 
 // Пункт T4: публичная страница прозрачности. Все числа — из /api/transparency,
@@ -16,8 +17,6 @@ const explorerUrl = (wallet: string) =>
     : `https://explorer.solana.com/address/${wallet}?cluster=${CLUSTER}`;
 
 const count = (n: number) => n.toLocaleString('en-US');
-const usd = (s: string) =>
-  `$${Number(s).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const pct = (r: number) => `${(r * 100).toFixed(1)}%`;
 
 export default function TransparencyPage() {
@@ -70,7 +69,7 @@ export default function TransparencyPage() {
         </div>
         <div>
           <span>Paid to traders</span>
-          <strong>{r ? usd(r.payoutsPaidUsd) : dash}</strong>
+          <strong>{r ? formatUsd(r.payoutsPaidUsd) : dash}</strong>
           <small className="block text-[10px] text-gray-500 mt-3">{r ? `${count(r.payoutsCount)} completed payout${r.payoutsCount === 1 ? '' : 's'} in USDC` : 'Completed payouts in USDC'}</small>
         </div>
         <div>
@@ -94,7 +93,7 @@ export default function TransparencyPage() {
             <span className="break-all text-xs text-gray-500">{r.treasuryWallet}</span>
             <span className="text-sm text-gray-400">
               USDC balance:{' '}
-              {r.treasuryUsdc !== null ? <strong className="font-normal text-gray-200">{usd(r.treasuryUsdc)}</strong> : 'unavailable right now'}
+              {r.treasuryUsdc !== null ? <strong className="font-normal text-gray-200">{formatUsd(r.treasuryUsdc)}</strong> : 'unavailable right now'}
             </span>
           </div>
         ) : (

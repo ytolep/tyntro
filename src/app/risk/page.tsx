@@ -48,7 +48,7 @@ export default function RiskPage() {
         <span className="eyebrow">00:00 UTC RESET</span>
         <h2 className="mt-3">Daily drawdown.</h2>
         <p className="risk-note">The daily floor resets every day at 00:00 UTC from the equity at that timestamp, including realized PnL, open PnL, fees and funding.</p>
-        <div className="dashboard-meta"><span className="text-gray-400">Day-start equity</span><strong>{account.dayStartEquity != null ? usd(num(account.dayStartEquity)) : '—'}</strong></div>
+        <div className="dashboard-meta"><span className="text-gray-400">Day-start equity</span><strong>{account.dayStartEquity != null ? usd(account.dayStartEquity) : '—'}</strong></div>
         <div className="dashboard-meta"><span className="text-gray-400">Today&apos;s failure floor</span><strong>{dailyFloor != null ? usd(dailyFloor) : '—'}</strong></div>
         <div className="dashboard-meta"><span className="text-gray-400">Distance to floor</span><strong className={dailyFloor != null && equity - dailyFloor < 0 ? '!text-loss' : undefined}>{dist(dailyFloor)}</strong></div>
       </section>

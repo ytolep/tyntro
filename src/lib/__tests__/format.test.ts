@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { formatUsd } from '../format';
+import { usd } from '../display';
 
 test('formatUsd: разделители разрядов и 2 знака', () => {
   assert.equal(formatUsd(100000), '$100,000.00');
@@ -19,4 +20,13 @@ test('formatUsd: null/undefined/нечисло → «—»', () => {
 
 test('formatUsd: Decimal-строка без потери точности', () => {
   assert.equal(formatUsd('12345678901234567.89'), '$12,345,678,901,234,567.89');
+});
+
+test('usd из display.ts — обёртка над formatUsd: тот же результат для числа и строки', () => {
+  assert.equal(usd(100000), formatUsd(100000));
+  assert.equal(usd(100000), '$100,000.00');
+  assert.equal(usd('1234.5'), formatUsd('1234.5'));
+  assert.equal(usd('1234.5'), '$1,234.50');
+  // Decimal-строка из API проходит в Intl как есть — точность не теряется.
+  assert.equal(usd('12345678901234567.89'), '$12,345,678,901,234,567.89');
 });
