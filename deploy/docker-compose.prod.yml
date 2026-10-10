@@ -68,6 +68,7 @@ services:
       TRUSTED_IP_HEADER: ${TRUSTED_IP_HEADER:-x-forwarded-for}
       TRUSTED_PROXY_COUNT: ${TRUSTED_PROXY_COUNT:-1}
       BLOCKED_COUNTRIES: ${BLOCKED_COUNTRIES:-}
+      GEO_COUNTRY_HEADER: ${GEO_COUNTRY_HEADER:-}
     depends_on:
       migrate:
         condition: service_completed_successfully

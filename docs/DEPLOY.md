@@ -142,8 +142,8 @@ deploy/restore.sh deploy/backups/props-20260101T030000Z.dump
 - [ ] `NEXT_PUBLIC_SOLANA_CLUSTER=mainnet-beta` — уже дефолт кода и сборки,
       ничего пересобирать не нужно (см. комментарий в
       `.env.production.example`: NEXT_PUBLIC_* инлайнятся при сборке).
-- [ ] `APP_DOMAINS` = ваш домен; `TRUSTED_IP_HEADER=x-forwarded-for`,
-      `TRUSTED_PROXY_COUNT=1` (единственный прокси — Caddy).
+- [ ] `APP_DOMAINS` = ваш домен; `TRUSTED_IP_HEADER=cf-connecting-ip` за Cloudflare
+      (без Cloudflare — `x-forwarded-for`), `TRUSTED_PROXY_COUNT=1`.
 - [ ] `SOLANA_RPC_URL` — платный RPC для стабильности подтверждений.
 - [ ] Стек перезапущен с новым env: `docker compose ... up -d` (compose
       пересоздаст контейнеры с новыми переменными).
