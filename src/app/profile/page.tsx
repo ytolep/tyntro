@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ArrowUpRight } from 'lucide-react';
 import { useAuth } from '@/lib/auth/AuthContext';
+import { formatUsd } from '@/lib/format';
 import SignInRequired from '@/components/SignInRequired';
 
 interface FundedAccountRow {
@@ -173,12 +174,12 @@ export default function ProfilePage() {
                 <b>{account.status}</b>
               </div>
 
-              <strong>${account.accountSize} capital</strong>
+              <strong>{formatUsd(account.accountSize)} capital</strong>
 
               <dl>
                 <div>
                   <dt>Equity</dt>
-                  <dd>${account.equity}</dd>
+                  <dd>{formatUsd(account.equity)}</dd>
                 </div>
                 <div>
                   <dt>Open positions</dt>
@@ -190,7 +191,7 @@ export default function ProfilePage() {
                 </div>
                 <div>
                   <dt>Available for payout</dt>
-                  <dd>${account.availableUsd} USD</dd>
+                  <dd>{formatUsd(account.availableUsd)} USD</dd>
                 </div>
               </dl>
 
@@ -249,7 +250,7 @@ export default function ProfilePage() {
                 data.payouts.map((payout) => (
                   <tr key={payout.id}>
                     <td>{new Date(payout.createdAt).toLocaleString()}</td>
-                    <td>${payout.amountUsd}</td>
+                    <td>{formatUsd(payout.amountUsd)}</td>
                     <td className={STATUS_STYLES[payout.status] ?? undefined}>{payout.status}</td>
                     <td>{payout.txSignature ? `${payout.txSignature.slice(0, 16)}…` : '—'}</td>
                   </tr>
