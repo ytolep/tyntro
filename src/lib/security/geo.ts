@@ -18,15 +18,27 @@ export function parseBlockedCountries(raw: string | null | undefined): Set<strin
 }
 
 /**
- * Страна из заголовков платформы: x-vercel-ip-country (Vercel) приоритетнее cf-ipcountry (Cloudflare).
+ * Единственный доверенный заголовок страны. Чужие (клиентские) заголовки не читаются:
+ * на своём сервере x-vercel-ip-country может прислать любой клиент (см. deploy/Caddyfile).
+ * GEO_COUNTRY_HEADER > VERCEL=1 (платформа Vercel сама ставит x-vercel-ip-country)
+ * > cf-ipcountry (Cloudflare перед сервером).
+ */
+export function resolveTrustedCountryHeader(env: Record<string, string | undefined>): string {
+  const explicit = env.GEO_COUNTRY_HEADER?.trim().toLowerCase();
+  if (explicit) return explicit;
+  return env.VERCEL === '1' ? 'x-vercel-ip-country' : 'cf-ipcountry';
+}
+
+// Фиксируется на старте процесса (как BLOCKED_COUNTRIES в middleware); смена env требует рестарта.
+export const trustedCountryHeader = resolveTrustedCountryHeader(process.env);
+
+/**
+ * Страна из единственного доверенного заголовка (trustedCountryHeader).
  * null = страна не определена (не блокируем).
  */
 export function countryFromHeaders(get: (name: string) => string | null): string | null {
-  for (const name of ['x-vercel-ip-country', 'cf-ipcountry']) {
-    const value = get(name)?.trim().toUpperCase() ?? '';
-    if (/^[A-Z]{2}$/.test(value) && !NON_COUNTRY_CODES.has(value)) return value;
-  }
-  return null;
+  const value = get(trustedCountryHeader)?.trim().toUpperCase() ?? '';
+  return /^[A-Z]{2}$/.test(value) && !NON_COUNTRY_CODES.has(value) ? value : null;
 }
 
 // Публичные рыночные данные и сама заглушка доступны из любой страны.
