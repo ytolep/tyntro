@@ -6,6 +6,7 @@ import { useWallet } from '@solana/wallet-adapter-react';
 import { ArrowUpRight, ChevronDown, Menu, X, Wallet, Check, Copy, LogOut, LogIn } from 'lucide-react';
 import { useMarketData } from '@/lib/marketData/MarketDataStore';
 import Brand from './Brand';
+import { stageLabel } from './AccountModeNotice';
 import { useAuth } from '@/lib/auth/AuthContext';
 import NotificationBell from './NotificationBell';
 
@@ -13,7 +14,7 @@ import NotificationBell from './NotificationBell';
 const links = [{ name: 'Overview', href: '/' }, { name: 'Challenges', href: '/challenges' }, { name: 'Trade', href: '/terminal' }, { name: 'Leaderboard', href: '/leaderboard' }];
 const accountLinks = [{ name: 'Dashboard', href: '/dashboard' }, { name: 'History', href: '/history' }, { name: 'Trader score', href: '/trader-score' }, { name: 'Risk & rules', href: '/risk' }, { name: 'Profile', href: '/profile' }, { name: 'Funded', href: '/funded' }];
 
-type AccountSummary = { id: string; accountSize: number; mode: string; status: string; currentEquity: number | null };
+type AccountSummary = { id: string; accountSize: number; mode: string; status: string; phase?: string; currentEquity: number | null };
 
 export default function Navigation() {
   const pathname = usePathname(); const { publicKey, connected, disconnect } = useWallet();
@@ -46,7 +47,7 @@ export default function Navigation() {
   // Admin-ссылка видна только ADMIN (после ответа /api/auth/me); до ответа и после выхода скрыта.
   const personalLinks = authUser?.role === 'ADMIN' ? [...accountLinks, { name: 'Admin', href: '/admin' }] : accountLinks;
   const appPage = !['/', '/challenges'].includes(pathname);
-  const activeLabel = active ? `$${active.accountSize / 1000}K ${active.mode === 'FUNDED' || active.status === 'FUNDED' ? 'FUNDED' : 'CHALLENGE'}` : '';
+  const activeLabel = active ? `$${active.accountSize / 1000}K ${stageLabel(active)}` : '';
 
   return <>
     <header className="site-header">
@@ -68,7 +69,7 @@ export default function Navigation() {
               {accounts.length > 0 && <>
                 <span className="eyebrow">YOUR ACCOUNTS</span>
                 {accounts.map(a => <button key={a.id} role="menuitem" onClick={() => { localStorage.setItem('activeAccountId', a.id); window.location.reload(); }}>
-                  <span>${a.accountSize / 1000}K {a.mode}<small>{a.currentEquity === null ? 'Awaiting Phoenix connection' : `$${a.currentEquity.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} virtual`}</small></span>
+                  <span>${a.accountSize / 1000}K {stageLabel(a)}<small>{a.currentEquity === null ? 'Awaiting Phoenix connection' : `$${a.currentEquity.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} virtual`}</small></span>
                   {active?.id === a.id && <Check size={14} />}
                 </button>)}
                 <Link href="/challenges" role="menuitem">New challenge <ArrowUpRight size={13} /></Link>
@@ -98,7 +99,7 @@ export default function Navigation() {
         </div>}
       </nav>}
       {/* M6: на /terminal данные рынка уже в шапке терминала — общую ленту не дублируем. */}
-      {appPage && pathname !== '/terminal' && <div className="market-ribbon"><span className="ribbon-source"><i className={connectionStatus === 'connected' ? 'status-dot' : 'status-dot offline'} />PHOENIX {selectedMarket.type.toUpperCase()}</span><strong>{selectedMarket.symbol}</strong><span>{selectedMarket.type === 'perp' ? 'Mark' : 'Mid'}</span><b>{snapshot?.referencePrice ? `$${snapshot.referencePrice.toLocaleString('en-US', { maximumFractionDigits: selectedMarket.priceDecimals })}` : '—'}</b><span className="ribbon-end">{active?.mode === 'FUNDED' || active?.status === 'FUNDED' ? 'FUNDED · NOT CONNECTED' : 'CHALLENGE · VIRTUAL CAPITAL'} <span className="ribbon-divider">/</span> SOLANA</span></div>}
+      {appPage && pathname !== '/terminal' && <div className="market-ribbon"><span className="ribbon-source"><i className={connectionStatus === 'connected' ? 'status-dot' : 'status-dot offline'} />PHOENIX {selectedMarket.type.toUpperCase()}</span><strong>{selectedMarket.symbol}</strong><span>{selectedMarket.type === 'perp' ? 'Mark' : 'Mid'}</span><b>{snapshot?.referencePrice ? `$${snapshot.referencePrice.toLocaleString('en-US', { maximumFractionDigits: selectedMarket.priceDecimals })}` : '—'}</b><span className="ribbon-end">{active && stageLabel(active) === 'FUNDED' ? (active.phase === 'FUNDED_SIM' ? 'FUNDED · SIMULATED EXECUTION' : 'FUNDED · NOT CONNECTED') : 'CHALLENGE · VIRTUAL CAPITAL'} <span className="ribbon-divider">/</span> SOLANA</span></div>}
     </header>
     {walletOpen && <div className="modal-scrim" onClick={() => setWalletOpen(false)}><section className="wallet-dialog" role="dialog" aria-modal="true" aria-labelledby="wallet-title" onClick={e => e.stopPropagation()}><button className="dialog-close" aria-label="Close wallet details" onClick={() => setWalletOpen(false)}><X size={20} /></button><span className="eyebrow">SOLANA MAINNET</span><h2 id="wallet-title">Your wallet.</h2><p className="text-gray-400">{shortAddress}</p><button className="button-secondary" onClick={copy}>{copied ? <Check size={16} /> : <Copy size={16} />} {copied ? 'Copied' : 'Copy address'}</button><button className="button-secondary" onClick={() => { disconnect(); setWalletOpen(false); }}><LogOut size={16} />Disconnect</button>{authUser && <button className="button-secondary" onClick={() => void signOut()}><LogOut size={16} />Sign out</button>}</section></div>}
   </>;

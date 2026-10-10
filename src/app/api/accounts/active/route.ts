@@ -60,6 +60,7 @@ export async function GET(req: Request) {
         id: acc.id,
         accountSize: acc.accountSize,
         planType: acc.challenge.planType,
+        phase: acc.phase,
         mode: policy.mode,
         currentEquity: policy.provider === 'SIMULATOR' ? equity : null,
         pnlPct: policy.provider === 'SIMULATOR' ? pnlPct : null,
@@ -70,7 +71,7 @@ export async function GET(req: Request) {
 
     return NextResponse.json({
       account: execution.provider === 'SIMULATOR' ? account : {
-        id: account.id, mode: execution.mode, status: account.status,
+        id: account.id, mode: execution.mode, phase: account.phase, status: account.status,
         accountSize: account.accountSize, challenge: account.challenge, createdAt: account.createdAt,
         currentBalance: null, currentEquity: null, positions: [], orders: [], fills: [], equitySnapshots: [],
       },
