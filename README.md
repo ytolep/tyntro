@@ -2,7 +2,7 @@
 
 Проп-трейдинг платформа: челленджи с оплатой в USDC (Solana Pay), серверный риск-движок
 (тик раз в секунду), симулятор исполнения на ценах Phoenix, funded-стадия и выплаты.
-Next.js 14 (App Router) + Prisma 6 + PostgreSQL 17. Деньги и цены — только `Prisma.Decimal`.
+Next.js 16 (App Router) + React 19 + Prisma 6.19 + PostgreSQL 17. Деньги и цены — только `Prisma.Decimal`.
 
 ## Быстрый старт (docker compose)
 

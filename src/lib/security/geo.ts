@@ -29,7 +29,7 @@ export function resolveTrustedCountryHeader(env: Record<string, string | undefin
   return env.VERCEL === '1' ? 'x-vercel-ip-country' : 'cf-ipcountry';
 }
 
-// Фиксируется на старте процесса (как BLOCKED_COUNTRIES в middleware); смена env требует рестарта.
+// Фиксируется на старте процесса (как BLOCKED_COUNTRIES в proxy); смена env требует рестарта.
 export const trustedCountryHeader = resolveTrustedCountryHeader(process.env);
 
 /**

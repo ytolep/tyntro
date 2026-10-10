@@ -16,7 +16,7 @@ export function newNonce(): string {
 
 // H2 (docs/REVIEW.md): домен SIWS-сообщения должен быть нашим.
 // Белый список APP_DOMAINS (CSV) фиксируется на старте процесса (как BLOCKED_COUNTRIES
-// в middleware); APP_DOMAIN — домен-фолбэк (по умолчанию первый из APP_DOMAINS).
+// в proxy); APP_DOMAIN — домен-фолбэк (по умолчанию первый из APP_DOMAINS).
 const APP_DOMAINS = (process.env.APP_DOMAINS ?? '')
   .split(',')
   .map((d) => d.trim().toLowerCase())
