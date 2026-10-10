@@ -35,3 +35,6 @@ deploy/backups/
 .codegraph/
 .playwright-mcp/
 CLAUDE.local.md
+
+# Отчёты scripts/manual-qa.ts
+qa-report-*.md

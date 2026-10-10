@@ -46,7 +46,14 @@ services:
         condition: service_healthy
 
   web:
-    build: ..
+    # Браузерный бандл собирается с NEXT_PUBLIC_* из .env.production (devnet / mainnet).
+    build:
+      context: ..
+      args:
+        NEXT_PUBLIC_SOLANA_CLUSTER: ${NEXT_PUBLIC_SOLANA_CLUSTER:-}
+        NEXT_PUBLIC_SOLANA_RPC_URL: ${NEXT_PUBLIC_SOLANA_RPC_URL:-}
+        NEXT_PUBLIC_SUPPORT_EMAIL: ${NEXT_PUBLIC_SUPPORT_EMAIL:-}
+        NEXT_PUBLIC_BRAND_NAME: ${NEXT_PUBLIC_BRAND_NAME:-}
     restart: unless-stopped
     # Порт 3000 только внутри сети стека; наружу трафик идёт через caddy.
     expose:

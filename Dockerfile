@@ -26,6 +26,16 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV DATABASE_URL=postgresql://build:build@localhost:5432/build
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+# NEXT_PUBLIC_* инлайнятся в браузерный бандл и CSP (next.config.js) при сборке —
+# приходят build-аргументами из compose (.env.production). Пусто → дефолты кода (mainnet).
+ARG NEXT_PUBLIC_SOLANA_CLUSTER=
+ARG NEXT_PUBLIC_SOLANA_RPC_URL=
+ARG NEXT_PUBLIC_SUPPORT_EMAIL=
+ARG NEXT_PUBLIC_BRAND_NAME=
+ENV NEXT_PUBLIC_SOLANA_CLUSTER=$NEXT_PUBLIC_SOLANA_CLUSTER \
+    NEXT_PUBLIC_SOLANA_RPC_URL=$NEXT_PUBLIC_SOLANA_RPC_URL \
+    NEXT_PUBLIC_SUPPORT_EMAIL=$NEXT_PUBLIC_SUPPORT_EMAIL \
+    NEXT_PUBLIC_BRAND_NAME=$NEXT_PUBLIC_BRAND_NAME
 RUN npx next build
 
 # ---- runner: web + worker + prisma CLI в одном образе
