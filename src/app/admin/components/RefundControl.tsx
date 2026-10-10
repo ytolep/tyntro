@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import ConfirmButton from './ConfirmButton';
 import { BASE58_SIG } from './PayoutRowActions';
-import { num, usd } from '@/lib/display';
+import { shortWallet, usd } from '@/lib/display';
 
 const CLUSTER = process.env.NEXT_PUBLIC_SOLANA_CLUSTER || 'mainnet-beta';
 
@@ -111,11 +111,11 @@ export default function RefundControl({ disabled = false }: { disabled?: boolean
                   return (
                     <tr key={p.id}>
                       <td>#{p.id.slice(0, 8)}</td>
-                      <td>{p.walletAddress}</td>
+                      <td title={p.walletAddress}>{shortWallet(p.walletAddress)}</td>
                       <td>
-                        {p.planType} · {usd(num(p.accountSize))}
+                        {p.planType} · {usd(p.accountSize)}
                       </td>
-                      <td>{usd(num(p.amountUsdc))}</td>
+                      <td>{usd(p.amountUsdc)}</td>
                       <td>
                         {p.account ? (
                           <>

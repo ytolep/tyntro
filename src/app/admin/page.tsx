@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
-import { num, usd } from '@/lib/display';
+import { shortWallet, usd } from '@/lib/display';
 import { useAuth } from '@/lib/auth/AuthContext';
 import SignInRequired from '@/components/SignInRequired';
 import { BRAND_NAME } from '@/lib/brand';
@@ -36,10 +36,6 @@ interface FundedAccountRow {
   user?: { walletAddress?: string } | null;
   challenge?: { planType?: string } | null;
 }
-
-/** Кошелёк в таблицах очередей: сокращение как в лидерборде, полный адрес — в title. */
-const shortWallet = (wallet?: string | null) =>
-  wallet && wallet.length > 12 ? `${wallet.slice(0, 6)}…${wallet.slice(-4)}` : (wallet ?? '');
 
 interface PayoutRow {
   id: string;
@@ -183,7 +179,7 @@ export default function AdminPage() {
 
   const cards = [
     { label: 'EVALUATIONS BOUGHT', value: String(m.purchases), note: '', accent: '' },
-    { label: 'REVENUE', value: usd(num(m.revenueUsdc)), note: 'USDC collected', accent: 'text-profit' },
+    { label: 'REVENUE', value: usd(m.revenueUsdc), note: 'USDC collected', accent: 'text-profit' },
     { label: 'ACTIVE ACCOUNTS', value: String(m.activeAccounts), note: '', accent: '' },
     {
       label: 'PASS RATE',
@@ -194,7 +190,7 @@ export default function AdminPage() {
     { label: 'FUNDED ACCOUNTS', value: String(m.fundedAccounts), note: 'FUNDED_SIM phase', accent: '' },
     {
       label: 'PAYOUTS PAID',
-      value: `${m.payoutsPaid.count} · ${usd(num(m.payoutsPaid.totalUsd))}`,
+      value: `${m.payoutsPaid.count} · ${usd(m.payoutsPaid.totalUsd)}`,
       note: 'count · total USD',
       accent: '',
     },
@@ -249,7 +245,7 @@ export default function AdminPage() {
                     <td>#{a.id.slice(0, 8)}</td>
                     <td title={a.user?.walletAddress}>{shortWallet(a.user?.walletAddress)}</td>
                     <td>{a.challenge?.planType}</td>
-                    <td>{usd(num(a.accountSize))}</td>
+                    <td>{usd(a.accountSize)}</td>
                     <td>{a.totalTrades}</td>
                     <td>
                       <span className="text-profit">{a.status}</span>
@@ -308,7 +304,7 @@ export default function AdminPage() {
                     <td>
                       #{p.account?.id.slice(0, 8)} · {p.account?.challenge?.planType}
                     </td>
-                    <td>{usd(num(p.amountUsd))}</td>
+                    <td>{usd(p.amountUsd)}</td>
                     <td
                       className={
                         p.status === 'APPROVED' || p.status === 'PAID'
