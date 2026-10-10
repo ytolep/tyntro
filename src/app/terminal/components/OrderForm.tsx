@@ -78,11 +78,17 @@ export default function OrderForm({
     : 0;
 
   const qtyDigits = selectedMarket.quantityDecimals ?? 6;
-  // M4: быстрые кнопки — доля доступной маржи с текущим плечом; без счёта скрыты.
+  // Потолок размера — то, что пропустит checkMargin на сервере: size/плечо + комиссия ≤ доступной марже.
+  // Без счёта торговать нельзя, ползунок остаётся демонстрационным до $50k.
+  const maxSizeUsd = availableMargin !== null
+    ? Math.max(0, Math.floor((availableMargin * leverage) / (1 + leverage * (takerFee ?? 0))))
+    : 50000;
+  const overMax = availableMargin !== null && sizeUsd > maxSizeUsd;
+  // M4: быстрые кнопки — доля потолка с текущим плечом; без счёта скрыты.
   const sizeQuickButtons = availableMargin !== null && availableMargin > 0
     ? ([25, 50, 75, 100] as const).map((p) => ({
         pct: p,
-        usd: Math.max(0, Math.floor((availableMargin * leverage * p) / 100)),
+        usd: Math.floor((maxSizeUsd * p) / 100),
       }))
     : [];
 
@@ -96,7 +102,7 @@ export default function OrderForm({
   else if (accountStatus === 'PASSED') mainAction = { label: 'Challenge passed', tone: 'neutral', disabled: true };
   else if (accountStatus === 'FAILED') mainAction = { label: 'Challenge failed', tone: 'neutral', disabled: true };
 
-  const tradeDisabled = executing || !canTrade || !hasPrice || selectedMarket.type === 'spot' || selectedMarket.status !== 'active' || !(sizeUsd > 0);
+  const tradeDisabled = executing || !canTrade || !hasPrice || selectedMarket.type === 'spot' || selectedMarket.status !== 'active' || !(sizeUsd > 0) || overMax;
   const tradeLabel = marketsError
     ? 'Market list unavailable'
     : selectedMarket.status !== 'active'
@@ -107,7 +113,9 @@ export default function OrderForm({
           ? 'Spot: data only'
           : !hasPrice
             ? 'Waiting for market price'
-            : `Simulate ${orderMode} ${side === 'LONG' ? 'Long' : 'Short'}`;
+            : overMax
+              ? `Max size $${maxSizeUsd.toLocaleString('en-US')} at ${leverage}×`
+              : `Simulate ${orderMode} ${side === 'LONG' ? 'Long' : 'Short'}`;
 
   const ctaClass = (tone: 'neutral' | 'primary' | 'side') =>
     `w-full py-3.5 rounded-xl font-extrabold text-sm transition-all shadow-lg flex items-center justify-center space-x-2 disabled:opacity-50 active:scale-95 ${
@@ -217,10 +225,10 @@ export default function OrderForm({
           <div className="pt-2 space-y-1">
             <input
               type="range"
-              min="500"
-              max="50000"
+              min="0"
+              max={maxSizeUsd}
               step="500"
-              value={Math.min(Math.max(sizeUsd, 500), 50000)}
+              value={Math.min(sizeUsd, maxSizeUsd)}
               disabled={!hasPrice}
               onChange={(e) => setSizeUsd(Number(e.target.value))}
               className="w-full accent-[#8ff0cc] cursor-pointer disabled:opacity-50"
