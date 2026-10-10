@@ -112,6 +112,12 @@ function CheckoutContent() {
         setPayError('Not enough USDC on this network');
         return;
       }
+      // Без SOL на комиссию кошелёк показывает только «Simulation failed» — называем причину сами.
+      // ponytail: порог = комиссия; если у казны нет ATA, нужна ещё аренда ~0.002 SOL.
+      if ((await connection.getBalance(publicKey)) < 10_000) {
+        setPayError('Not enough SOL for the network fee on this network');
+        return;
+      }
       const ixs = buildUsdcTransferInstructions({
         payer: address,
         recipient: req.recipient,
@@ -123,6 +129,7 @@ function CheckoutContent() {
       await connection.confirmTransaction(signature, 'confirmed');
       setTxSignature(signature);
     } catch (err) {
+      console.error(err);
       const msg = `${(err as { name?: unknown })?.name ?? ''} ${(err as { message?: unknown })?.message ?? ''}`;
       setPayError(/reject|cancel|declin/i.test(msg) ? 'Payment cancelled' : 'Payment failed — try again');
     } finally {
@@ -272,10 +279,12 @@ function CheckoutContent() {
             </div>
           )}
 
+          {/* Без согласия createPurchase ничего не делает — спиннер здесь висел бы вечно. */}
           {user && !error && status === 'LOADING' && (
             <div className="pay-step">
-              <p className="pay-waiting"><Loader2 className="w-4 h-4 animate-spin" /> Creating your payment request…</p>
-              {!agreed && <small className="pay-hint">Check the agreement box to continue.</small>}
+              {agreed
+                ? <p className="pay-waiting"><Loader2 className="w-4 h-4 animate-spin" /> Creating your payment request…</p>
+                : <p className="pay-hint">Check the agreement box to create your payment request.</p>}
             </div>
           )}
 
@@ -286,6 +295,12 @@ function CheckoutContent() {
                 The request specifies the treasury address, exact amount and a unique reference key —
                 the challenge account is activated automatically once the transfer is confirmed on-chain.
               </p>
+              {explorerCluster && (
+                <p className="pay-hint">
+                  Test mode: Solana devnet. Your wallet must be switched to devnet and hold devnet USDC
+                  plus a little devnet SOL for the fee.
+                </p>
+              )}
 
               {connected && publicKey ? (
                 <button
