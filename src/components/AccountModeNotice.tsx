@@ -1,9 +1,25 @@
 import Link from 'next/link';
 import { executionPolicy } from '@/lib/execution/policy';
 type Policy = ReturnType<typeof executionPolicy>;
-export default function AccountModeNotice({ execution }: { execution: Policy }) {
+
+// D3: стадия счёта определяется phase (FUNDED_SIM = funded-стадия на симуляторе),
+// а не mode/status — у FUNDED_SIM-счёта mode = 'CHALLENGE' (исполнение симулятором).
+// mode/status 'FUNDED' — легаси-ветка реального Phoenix-исполнения.
+export type StageAccount = { phase?: string | null; mode?: string | null; status?: string | null };
+export function stageLabel(a: StageAccount): 'FUNDED' | 'CHALLENGE' {
+  return a.phase === 'FUNDED_SIM' || a.mode === 'FUNDED' || a.status === 'FUNDED' ? 'FUNDED' : 'CHALLENGE';
+}
+
+export default function AccountModeNotice({ execution, phase }: { execution: Policy; phase?: string | null }) {
+  const fundedSim = phase === 'FUNDED_SIM';
+  const eyebrow = fundedSim ? 'FUNDED · SIMULATED EXECUTION'
+    : stageLabel({ mode: execution.mode }) === 'FUNDED' ? 'FUNDED · PHOENIX EXECUTION'
+    : 'CHALLENGE · VIRTUAL CAPITAL';
+  const message = fundedSim
+    ? 'Funded stage. Orders are simulated with live Phoenix prices; profits follow the funded payout schedule.'
+    : execution.message;
  return <section className="account-mode-notice" aria-label="Account trading mode">
-  <div><span className="eyebrow">{execution.mode === 'CHALLENGE' ? 'CHALLENGE · VIRTUAL CAPITAL' : 'FUNDED · PHOENIX EXECUTION'}</span><p>{execution.message}</p></div>
+  <div><span className="eyebrow">{eyebrow}</span><p>{message}</p></div>
   <Link href="/funded" className="text-button">Funded stage ↗</Link>
  </section>;
 }
