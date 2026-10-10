@@ -13,7 +13,6 @@ export default function ChallengePicker() {
    <h3>{name.charAt(0)+name.slice(1).toLowerCase()}</h3><p>{descriptions[name]}</p>
    <div className="plan-price">${PRICING_MATRIX[size][name]}<span>/ challenge</span></div>
    <div className="plan-capital">${size.toLocaleString()} <span>evaluation capital</span></div>
-   {name==='CORE'&&<p className="plan-why">Priced above Apex for the softest static drawdown of the three plans — {PLAN_CONFIGS.CORE.maxDdPct}% vs {PLAN_CONFIGS.APEX.maxDdPct}% and {PLAN_CONFIGS.SPRINT.maxDdPct}%.</p>}
    <dl>{[['Profit target',`${c.profitTargetPct}%`],['Max daily loss',`${c.dailyDdPct}%`],['Static max loss',`${c.maxDdPct}%`],['Minimum trading days',`${c.minTradingDays} days`],['Profit split',`${c.profitSplitPct}%`]].map(([k,v])=><div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}</dl>
    <Link href={`/checkout?size=${size}&plan=${name}`} className={name==='CORE'?'button-primary':'button-secondary'}>Choose {name.charAt(0)+name.slice(1).toLowerCase()}<ArrowRight size={16}/></Link>
    <small className="plan-note"><Check size={12}/> Simulated evaluation account</small>
