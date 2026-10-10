@@ -25,13 +25,8 @@ export default function OpengraphImage() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 36 }}>
           {/* Знак из src/components/Brand.tsx (stroke-пути как в логотипе) */}
           <svg width="128" height="128" viewBox="0 0 36 36" fill="none">
-            <path
-              d="M7 27V8h16l6 6-6 7H13"
-              stroke="#f3f2f7"
-              strokeWidth="4"
-              strokeLinejoin="miter"
-            />
-            <path d="m19 25 9 5" stroke="#b7a0ff" strokeWidth="4" />
+            <rect x="2" y="2" width="32" height="32" rx="8" fill="#b7a0ff" />
+            <path d="M9.5 11h17M18 11v16" stroke="#09090d" strokeWidth="4.5" />
           </svg>
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             <div
