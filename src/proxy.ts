@@ -13,7 +13,7 @@ const limiter = new RateLimiter({
 });
 
 // 'props_session' = SESSION_COOKIE из src/lib/auth/session.ts.
-// Модуль сессий не импортируем: он тянет Prisma, которая недоступна в edge-runtime.
+// Модуль сессий не импортируем, чтобы не тянуть Prisma в bundle proxy.
 const SESSION_COOKIE = 'props_session';
 
 // M2 (docs/REVIEW.md): IP только из доверенных источников, см. src/lib/security/clientIp.ts.
@@ -26,7 +26,7 @@ function clientKey(req: NextRequest): string {
   return `ip:${ip}`;
 }
 
-export function middleware(req: NextRequest): NextResponse {
+export function proxy(req: NextRequest): NextResponse {
   const { pathname } = req.nextUrl;
 
   // Гео-блок: /api/phoenix (публичные рыночные данные) и /blocked исключены.

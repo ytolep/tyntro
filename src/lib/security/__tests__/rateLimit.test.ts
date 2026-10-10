@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { refill, tryTake, RateLimiter } from '../rateLimit';
 
-// Лимит ордеров из middleware: 10/с, бёрст 20.
+// Лимит ордеров из proxy: 10/с, бёрст 20.
 const ORDERS = { ratePerSec: 10, capacity: 20 };
 
 test('бакет начинается полным: бёрст=capacity проходит, следующий отклонён', () => {
