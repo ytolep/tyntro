@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 
 /** /admin существует только для ADMIN: без сессии или роли — 404 (без раскрытия страницы). */
 export default async function AdminLayout({ children }: { children: ReactNode }) {
-  const admin = await getAdminFromCookieHeader(cookies().toString());
+  const admin = await getAdminFromCookieHeader((await cookies()).toString());
   if (!admin) notFound();
   return <>{children}</>;
 }
