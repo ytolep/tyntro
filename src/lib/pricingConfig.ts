@@ -44,20 +44,14 @@ export const PLAN_CONFIGS: Record<'SPRINT' | 'CORE' | 'APEX', ChallengeConfig> =
 export const ACCOUNT_SIZES = [5000, 10000, 25000, 50000, 100000] as const;
 export type AccountSize = typeof ACCOUNT_SIZES[number];
 
-// Временные тестовые цены $1/$2/$3 (порядок Sprint < Apex < Core сохранён).
-// Боевые цены по спецификации — вернуть перед запуском (и priceUsd в Challenge):
-// $5K: Sprint $23, Core $49, Apex $39
-// $10K: Sprint $39, Core $89, Apex $69
-// $25K: Sprint $99, Core $219, Apex $149
-// $50K: Sprint $199, Core $399, Apex $299
-// $100K: Sprint $369, Core $799, Apex $549
-const TEST_PRICES: PlanPricing = { SPRINT: 1, CORE: 3, APEX: 2 };
+// Цены временные, могут поменяться. Сид при каждом деплое синхронизирует priceUsd в Challenge.
 export const PRICING_MATRIX: Record<AccountSize, PlanPricing> = {
-  5000: TEST_PRICES,
-  10000: TEST_PRICES,
-  25000: TEST_PRICES,
-  50000: TEST_PRICES,
-  100000: TEST_PRICES,
+  5000: { SPRINT: 25, CORE: 49, APEX: 39 },
+  // CORE $10K = $1 — тестовая покупка; боевая цена $99.
+  10000: { SPRINT: 45, CORE: 1, APEX: 75 },
+  25000: { SPRINT: 109, CORE: 249, APEX: 169 },
+  50000: { SPRINT: 219, CORE: 449, APEX: 319 },
+  100000: { SPRINT: 399, CORE: 899, APEX: 619 },
 };
 
 export function getPrice(accountSize: number, planType: 'SPRINT' | 'CORE' | 'APEX'): number {

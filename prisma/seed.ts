@@ -14,7 +14,9 @@ async function main() {
       const config = PLAN_CONFIGS[planType];
       await prisma.challenge.upsert({
         where: { accountSize_planType: { accountSize: new Decimal(size), planType } },
-        update: {},
+        // Цена — из PRICING_MATRIX на каждом деплое; иначе витрина и сумма к оплате расходятся.
+        // Правила плана не трогаем: они зафиксированы в купленных челленджах (rulesHash).
+        update: { priceUsd: new Decimal(PRICING_MATRIX[size][planType]) },
         create: {
           accountSize: new Decimal(size),
           planType,

@@ -1,5 +1,5 @@
 'use client';
-import { AlertTriangle, ChevronDown, Sliders } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 import type { Market, MarketSnapshot, NormalizedOrderBook } from '@/lib/marketData/types';
 
 interface OrderBookProps {
@@ -18,16 +18,12 @@ export default function OrderBook({ selectedMarket, orderBook, snapshot, current
       <div>
         {/* Orderbook Header Selector */}
         <div className="flex justify-between items-center text-gray-400 mb-3 pb-2 border-b border-[#25252e]">
-          <div className="flex items-center space-x-1">
-            <span className="text-white font-bold">L2</span>
-            <ChevronDown className="w-3 h-3" />
-          </div>
+          <span className="text-white font-bold">Order Book</span>
           <span className="font-bold text-gray-300">{selectedMarket.quoteAsset}</span>
-          <Sliders className="w-3.5 h-3.5 text-gray-500" />
         </div>
 
         <div className="mb-3 text-[10px] text-gray-400 space-y-1">
-          <div>{selectedMarket.type === 'perp' ? 'Phoenix Perps · live L2' : 'Phoenix Spot · on-chain L2'}</div>
+          <div>{selectedMarket.type === 'perp' ? 'Phoenix Perps · live order book' : 'Phoenix Spot · on-chain order book'}</div>
           <div>{snapshot ? `Source slot ${snapshot.slot.toLocaleString()} · live` : 'Waiting for verified source data'}</div>
         </div>
         {/* Table Column Headers */}
