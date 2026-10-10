@@ -90,7 +90,7 @@
 
 | Пункт | Что осталось |
 |---|---|
-| N3 | Имя продукта временно «PROPS» (`NEXT_PUBLIC_BRAND_NAME`), финальное не выбрано |
+| N3 | Имя выбрано: Tyntro (`BRAND_NAME` = TYNTRO, переопределяется `NEXT_PUBLIC_BRAND_NAME`) |
 | T1 | Terms, Privacy, Refunds — черновики с пометкой «pending legal review», нужен юрист |
 | T2 | Матрица цен не менялась; в карточке CORE объяснено, почему он дороже. Пересмотр цен — бизнес-решение |
 | V1 | В консоли остаётся ошибка CSP: стили `@solana/wallet-adapter-react-ui` сами импортируют DM Sans с Google Fonts. На вид не влияет |
