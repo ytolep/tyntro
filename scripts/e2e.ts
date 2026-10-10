@@ -27,6 +27,7 @@ import bs58 from 'bs58';
 import { checkPendingPayments } from '../src/worker/payments';
 import { associatedTokenAddress, USDC_DECIMALS } from '../src/lib/payments/solanaPay';
 import { TERMS_VERSION, REFUNDS_VERSION, RULES_VERSION } from '../src/lib/legal/versions';
+import { getPrice } from '../src/lib/pricingConfig';
 
 const BASE_URL = process.env.BASE_URL ?? 'http://localhost:3100';
 const DATABASE_URL = process.env.DATABASE_URL ?? '';
@@ -251,7 +252,7 @@ async function main(): Promise<void> {
       S.traderCookie = await login(trader, 'USER');
     }],
 
-    ['POST /api/checkout/create: покупка SPRINT $5K ($23), PENDING + Solana Pay URL', async () => {
+    ['POST /api/checkout/create: покупка SPRINT $5K (цена из прайс-матрицы), PENDING + Solana Pay URL', async () => {
       const res = await http('POST', '/api/checkout/create', {
         json: {
           accountSize: 5000,
@@ -265,7 +266,7 @@ async function main(): Promise<void> {
         cookie: S.traderCookie,
       });
       eq(res.status, 200, 'POST /api/checkout/create');
-      eq(res.body?.amount, '23.00', 'сумма SPRINT $5K из прайс-матрицы');
+      eq(res.body?.amount, getPrice(5000, 'SPRINT').toFixed(2), 'сумма SPRINT $5K из прайс-матрицы');
       check(typeof res.body?.reference === 'string' && res.body.reference.length >= 32, 'нет reference-ключа');
       const url = String(res.body?.url ?? '');
       check(url.startsWith(`solana:${TREASURY_WALLET}?`), 'URL Solana Pay ведёт не на TREASURY_WALLET приложения');
