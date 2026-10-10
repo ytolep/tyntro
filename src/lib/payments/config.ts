@@ -15,3 +15,9 @@ export function getPaymentsConfig(): PaymentsConfig {
     rpcUrl: process.env.PAYMENTS_RPC_URL || process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com',
   };
 }
+
+/** Задан ли TREASURY_WALLET: воркер решает, запускать ли цикл платежей,
+ *  health — требовать ли свежести lastPaymentsCheckAt. */
+export function isPaymentsConfigured(): boolean {
+  return Boolean(process.env.TREASURY_WALLET);
+}

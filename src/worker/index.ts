@@ -7,6 +7,7 @@ import { runRiskTick } from './riskTick';
 import { runDayRoll, DAY_ROLL_CHECK_MS } from './dayRoll';
 import { checkPendingPayments } from './payments';
 import { createSolanaRpc } from '../lib/payments/solanaPay';
+import { isPaymentsConfigured } from '../lib/payments/config';
 import { jsonLog } from './log';
 import { markDoneAfter, writeHeartbeat, HEARTBEAT_INTERVAL_MS } from './heartbeat';
 
@@ -42,16 +43,25 @@ async function loop(name: string, intervalMs: number, step: () => Promise<unknow
   jsonLog('info', `${name}: цикл остановлен`);
 }
 
+// Без TREASURY_WALLET цикл платежей не запускаем вовсе: один warn вместо ошибки
+// каждые 15 с; lastPaymentsCheckAt остаётся null, и health видит payments disabled.
+const paymentsEnabled = isPaymentsConfigured();
+if (!paymentsEnabled) {
+  jsonLog('warn', 'payments: TREASURY_WALLET не задан — проверка оплат отключена');
+}
+
 // Шаги обёрнуты markDoneAfter: heartbeat хранит время последнего ЗАВЕРШЁННОГО
 // тика/проверки — упавшая итерация не обновляет время, и /api/health видит 503.
 const loops = Promise.all([
   loop('riskTick', RISK_TICK_MS, markDoneAfter('tick', () => runRiskTick())),
-  loop('payments', PAYMENTS_CHECK_MS, markDoneAfter('payments', () => checkPendingPayments({ rpc: paymentsRpc }))),
+  ...(paymentsEnabled
+    ? [loop('payments', PAYMENTS_CHECK_MS, markDoneAfter('payments', () => checkPendingPayments({ rpc: paymentsRpc })))]
+    : []),
   loop('dayRoll', DAY_ROLL_CHECK_MS, markDoneAfter('dayRoll', () => runDayRoll())),
   loop('heartbeat', HEARTBEAT_INTERVAL_MS, () => writeHeartbeat(process.pid)),
 ]);
 
-jsonLog('info', 'worker запущен', { pid: process.pid, riskTickMs: RISK_TICK_MS, paymentsCheckMs: PAYMENTS_CHECK_MS, dayRollCheckMs: DAY_ROLL_CHECK_MS, heartbeatMs: HEARTBEAT_INTERVAL_MS });
+jsonLog('info', 'worker запущен', { pid: process.pid, riskTickMs: RISK_TICK_MS, paymentsCheckMs: PAYMENTS_CHECK_MS, dayRollCheckMs: DAY_ROLL_CHECK_MS, heartbeatMs: HEARTBEAT_INTERVAL_MS, payments: paymentsEnabled ? 'enabled' : 'disabled' });
 
 let exiting = false;
 function shutdown(signal: string): void {
