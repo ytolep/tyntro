@@ -33,13 +33,17 @@ test('writeHeartbeat до первого тика: строка одна, lastTi
 });
 
 test('успешный шаг отмечается, upsert не плодит строки', async () => {
+  const prev = await db.workerHeartbeat.findUniqueOrThrow({ where: { id: 'main' } });
   await heartbeat.markDoneAfter('tick', async () => {})();
   await heartbeat.markDoneAfter('payments', async () => {})();
   const before = new Date();
   await heartbeat.writeHeartbeat(4243);
   const row = await db.workerHeartbeat.findUniqueOrThrow({ where: { id: 'main' } });
-  assert.ok(row.lastTickAt.getTime() >= before.getTime());
-  assert.ok(row.lastPaymentsCheckAt!.getTime() >= before.getTime());
+  // Метки выставляются в markDoneAfter ДО `before`, а PG timestamp(3) округляет до мс:
+  // сравнение с `before` без допуска ложно падает при расхождении в единицы мс.
+  // Осмысленность (метка обновилась, а не осталась старой) — сравнением с prev.
+  assert.ok(row.lastTickAt.getTime() > prev.lastTickAt.getTime(), 'lastTickAt обновилась, а не осталась стартовой');
+  assert.ok(row.lastPaymentsCheckAt!.getTime() >= before.getTime() - 2_000, 'lastPaymentsCheckAt свежая (допуск 2 с)');
   assert.equal(row.pid, 4243);
   assert.equal(row.lastDayRollCheckAt, null);
   assert.equal(await db.workerHeartbeat.count(), 1, 'upsert, а не вторая строка');
