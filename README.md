@@ -100,6 +100,8 @@ Prop trading firms are a big market, but traders have to trust them blindly:
 
 Prices per account size live in `src/lib/pricingConfig.ts`; `npm run seed` syncs them to the database.
 
+> **Testing period:** Core $10K costs **$1** so anyone can try a real USDC purchase end to end. The regular price is $99.
+
 ## Tech stack
 
 Next.js 16 (App Router) · React 19 · TypeScript · Tailwind CSS · Prisma 6.19 ·
@@ -273,7 +275,7 @@ CI (`.github/workflows/ci.yml`) runs typecheck, tests against PostgreSQL 17 and 
 
 ## Business model
 
-Traders pay a one-time challenge fee ($25–$899 depending on plan and size). Funded
+Traders pay a one-time challenge fee ($25–$899 depending on plan and size; Core $10K is $1 during testing). Funded
 traders keep 80% of their profit; the firm keeps 20%. Payouts come from the public
 treasury, so the reserve is always visible.
 
