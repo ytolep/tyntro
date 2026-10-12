@@ -143,7 +143,7 @@ Starts `db`, runs migrations and seed once (`migrate`), then `web` on
 http://localhost:3000 and `worker`:
 
 ```sh
-git clone https://github.com/savvax/tyntro.git && cd tyntro
+git clone https://github.com/ytolep/tyntro.git && cd tyntro
 cp .env.example .env               # optionally set ADMIN_WALLET and others
 docker compose up -d --build
 curl http://localhost:3000/api/health

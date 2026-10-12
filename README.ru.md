@@ -143,7 +143,7 @@ PostgreSQL 17 · `@solana/web3.js` и wallet-adapter · lightweight-charts ·
 http://localhost:3000 и `worker`:
 
 ```sh
-git clone https://github.com/savvax/tyntro.git && cd tyntro
+git clone https://github.com/ytolep/tyntro.git && cd tyntro
 cp .env.example .env               # при желании заполните ADMIN_WALLET и другие
 docker compose up -d --build
 curl http://localhost:3000/api/health
