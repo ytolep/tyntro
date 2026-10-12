@@ -1,96 +1,294 @@
 # Tyntro
 
-Проп-трейдинг платформа: челленджи с оплатой в USDC (Solana Pay), серверный риск-движок
-(тик раз в секунду), симулятор исполнения на ценах Phoenix, funded-стадия и выплаты.
-Next.js 16 (App Router) + React 19 + Prisma 6.19 + PostgreSQL 17. Деньги и цены — только `Prisma.Decimal`.
+**A transparent prop firm for crypto perps, built on Solana.**
 
-## Быстрый старт (docker compose)
+**English** · [Русский](README.ru.md)
 
-Поднимает db, разовые миграции+сид (сервис `migrate`), web на http://localhost:3000 и worker:
+![Solana](https://img.shields.io/badge/Solana-Pay%20%C2%B7%20SIWS%20%C2%B7%20Phoenix-9945FF?logo=solana&logoColor=white)
+![Next.js](https://img.shields.io/badge/Next.js-16-000000?logo=nextdotjs)
+![Tests](https://img.shields.io/badge/tests-221%20passing-2ea44f)
+![Colosseum](https://img.shields.io/badge/Colosseum-Crypto%20World's%20Fair-ff6b00)
 
-```sh
-cp .env.example .env        # при желании заполните ADMIN_WALLET и пр.
-docker compose up -d --build
-curl http://localhost:3000/api/health   # {"status":"ok","db":"up","version":"..."}
+Tyntro lets anyone prove they can trade without risking their own capital. A trader
+pays for an evaluation challenge in USDC with Solana Pay, trades perpetual futures on a
+virtual account priced by live [Phoenix](https://phoenix.trade) markets, and a risk
+engine checks every rule once per second. Pass the challenge and the account becomes
+funded: the trader keeps 80% of the profit.
+
+![Landing page](docs/demo/01-landing.jpg)
+
+## The problem
+
+Prop trading firms are a big market, but traders have to trust them blindly:
+
+- Rules are vague and can change after you pay.
+- Nobody can check whether the firm has money to pay out.
+- Card payments exclude much of the world and take days to settle.
+- Pass/fail decisions are made behind closed doors.
+
+## How Tyntro solves it
+
+| Problem | Tyntro |
+|---------|--------|
+| Rules change after purchase | Each account stores a **hash of its plan rules** (`rulesHash`) at purchase. The risk engine enforces exactly those rules. |
+| Hidden finances | The **transparency page** reads the treasury's USDC balance directly from Solana and lists funded accounts. |
+| Slow, card-only payments | **USDC via Solana Pay**. Each purchase has a unique reference key; the worker finds the transfer on-chain and opens the account automatically. |
+| Opaque decisions | The **risk engine is deterministic**, logged and covered by tests. Every balance change is a ledger entry, and every admin action goes to an audit log. Rules page shows worked examples. |
+| Fake "real market" | Fills use **live Phoenix order books**, the on-chain perps DEX on Solana. The leaderboard is built only from real trades. |
+
+## Why Solana
+
+- **Solana Pay + USDC**: checkout in seconds for a few cents, no card processor,
+  no chargebacks, open to traders in any allowed country.
+- **Sign-in with Solana (SIWS)**: the wallet is the account. No passwords, no emails.
+- **Phoenix**: a fully on-chain order book gives honest, verifiable prices for the simulator.
+- **Public treasury**: anyone can verify the payout reserve on-chain at any time.
+
+| On-chain | Off-chain (server) |
+|----------|--------------------|
+| USDC payments with a per-purchase reference key | Simulated execution and positions |
+| Treasury balance shown on `/transparency` | Risk engine (1 s tick), ledger, audit log |
+| Payout and refund transfers (signature stored with the record) | KYC, admin decisions |
+| Wallet signatures for sign-in | Leaderboard, Trader Score |
+| Phoenix market data (read) | |
+
+## What works today
+
+- Full trader journey: sign in → pay USDC → trade → PASSED → funded approval → profit → payout request.
+- **221 automated tests** (`node:test`) on a real PostgreSQL, including the risk engine,
+  execution, payments, payouts and auth.
+- **End-to-end script** (`scripts/e2e.ts`) runs the whole journey against a live app.
+- **Real devnet payment** with real wallets and USDC transactions (`scripts/devnet-real.ts`).
+- **Load test**: bot accounts trading on recorded Phoenix prices, then a ledger audit
+  (`scripts/check-ledger.ts`) that must report zero violations.
+- Production stack: Docker, Caddy with HTTPS, daily backups, health checks, CI.
+
+## Screenshots
+
+| Trading terminal | Trader dashboard |
+|---|---|
+| ![Terminal](docs/demo/07-terminal-trader.jpg) | ![Dashboard](docs/demo/06-dashboard-trader.jpg) |
+| **Checkout (Solana Pay)** | **Transparency** |
+| ![Checkout](docs/demo/02-checkout-guest.jpg) | ![Transparency](docs/demo/04-transparency.jpg) |
+| **Funded account** | **Admin panel** |
+| ![Funded](docs/demo/10-funded.jpg) | ![Admin](docs/demo/13-admin.jpg) |
+| **Leaderboard** | **Mobile terminal** |
+| ![Leaderboard](docs/demo/05-leaderboard.jpg) | ![Mobile](docs/demo/14-mobile-terminal.jpg) |
+
+## Features
+
+- **Challenges.** Three plans (Sprint, Core, Apex) for $5K–$100K virtual accounts.
+  Paid in USDC on Solana; the worker confirms the transfer on-chain and opens the account.
+- **Trading terminal.** Live Phoenix data over WebSocket: mark and index price, 24h
+  stats, open interest, funding, order book, chart. Market and limit orders with leverage.
+- **Risk engine.** A worker re-prices open positions every second and enforces the
+  daily loss floor, the max drawdown, maintenance-margin liquidation, the profit target
+  and the minimum number of trading days.
+- **Funded stage and payouts.** Admin approval of funded accounts, 80% profit split,
+  payout requests with a KYC step.
+- **Public pages.** Leaderboard built from real trades, Trader Score, a transparency
+  page with the on-chain treasury, rules with worked drawdown examples.
+- **Admin panel.** Revenue and account metrics, funded and payout queues, refunds.
+- **Sign-in with Solana** (SIWS): the wallet signs a message; no passwords.
+- **Money is exact.** All amounts and prices are `Prisma.Decimal`, never `number`.
+
+| Plan   | Profit target | Daily loss limit | Max drawdown | Min trading days | Profit split |
+|--------|---------------|------------------|--------------|------------------|--------------|
+| Sprint | 9%            | 3%               | 3%           | 3                | 80%          |
+| Core   | 10%           | 3%               | 6%           | 3                | 80%          |
+| Apex   | 12%           | 3%               | 5%           | 3                | 80%          |
+
+Prices per account size live in `src/lib/pricingConfig.ts`; `npm run seed` syncs them to the database.
+
+## Tech stack
+
+Next.js 16 (App Router) · React 19 · TypeScript · Tailwind CSS · Prisma 6.19 ·
+PostgreSQL 17 · `@solana/web3.js` and wallet-adapter · lightweight-charts ·
+`node:test` + `tsx` · Docker.
+
+## How it works
+
+```
+browser ──► web (Next.js, :3000) ──► PostgreSQL ◄── worker (tsx)
+               │  pages + /api/*                       │ risk tick every 1 s
+               │  orders, auth, checkout               │ day roll every 30 s
+               ▼                                       │ USDC payment checks
+         Phoenix market data (Solana RPC) ◄────────────┘
 ```
 
-Один образ (Node 22-alpine, multi-stage, `next build` standalone) используется тремя сервисами:
+| Service   | Command                                                            |
+|-----------|--------------------------------------------------------------------|
+| `db`      | PostgreSQL 17 (host port `54339`)                                  |
+| `migrate` | `prisma migrate deploy && node --import tsx prisma/seed.ts` (runs once) |
+| `web`     | `node server.js` (Next.js standalone, port 3000)                   |
+| `worker`  | `./node_modules/.bin/tsx src/worker/index.ts`                      |
 
-| Сервис   | Команда                                                  |
-|----------|----------------------------------------------------------|
-| `migrate`| `prisma migrate deploy && node --import tsx prisma/seed.ts` (разовая) |
-| `web`    | `node server.js` (порт 3000)                             |
-| `worker` | `./node_modules/.bin/tsx src/worker/index.ts`            |
+All three app services share one image (Node 22 Alpine, multi-stage, `next build` standalone).
 
-Если порт 54339 на хосте занят другим checkout'ом, поднимите базу на другом порту:
-`DB_PORT=54340 docker compose up -d --build` (порт нужен только тестам и psql с хоста).
+## Getting started
 
-## Запуск локально (без docker)
+![Terminal demo](docs/demo/commands.gif)
+
+### Requirements
+
+- Node.js 22.12 or newer, npm
+- Docker with Compose v2
+- A Solana wallet (Phantom or similar) to sign in in the browser
+
+### Option A: everything in Docker
+
+Starts `db`, runs migrations and seed once (`migrate`), then `web` on
+http://localhost:3000 and `worker`:
+
+```sh
+git clone https://github.com/savvax/tyntro.git && cd tyntro
+cp .env.example .env               # optionally set ADMIN_WALLET and others
+docker compose up -d --build
+curl http://localhost:3000/api/health
+```
+
+If host port 54339 is taken, run the database on another one:
+`DB_PORT=54340 docker compose up -d --build` (the host port is only used by tests and `psql`).
+
+### Option B: local development
 
 ```sh
 npm ci
-docker compose up -d db                     # postgres на localhost:54339
-cp .env.example .env                        # DATABASE_URL уже указывает туда
-npx prisma migrate deploy && npm run seed
-npm run dev                                 # web на http://localhost:3000
-npm run worker                              # воркер в отдельном терминале
+cp .env.example .env               # DATABASE_URL already points to localhost:54339
+docker compose up -d db            # PostgreSQL only
+npx prisma migrate deploy
+npm run seed                       # challenge matrix + optional ADMIN
+npm run dev                        # web on http://localhost:3000
+npm run worker                     # risk engine, in a second terminal
 ```
 
-## Переменные окружения
+The worker is required for trading: without it orders are not filled against the
+risk rules and payments are not confirmed.
 
-| Переменная        | Обязательна | По умолчанию | Где используется |
-|-------------------|-------------|--------------|------------------|
-| `DATABASE_URL`    | да          | —            | Prisma (web, worker, seed, тесты) |
-| `TREASURY_WALLET` | для checkout/воркера платежей | — | `src/lib/payments/config.ts` — кошелёк приёма USDC |
-| `SOLANA_RPC_URL`  | нет         | `https://api.mainnet-beta.solana.com` | рыночные данные Phoenix, проверка оплат |
-| `NEXT_PUBLIC_SOLANA_RPC_URL` | нет | — | RPC сети кошелька в браузере (оплата checkout); devnet — для тестов оплаты |
-| `NEXT_PUBLIC_SOLANA_CLUSTER` | нет | `mainnet-beta` | кластер кошелька в браузере, если RPC не задан; Phoenix-данные не затрагивает |
-| `USDC_MINT`       | нет         | mainnet USDC `EPjFW…TDt1v` | проверка переводов (devnet-тесты подменяют) |
-| `TAKER_FEE_RATE`  | нет         | `0.0005`     | тик риска: комиссии симулятора (`src/worker/riskTick.ts`) |
-| `ADMIN_WALLET`    | нет         | —            | seed создаёт пользователя с ролью ADMIN |
-| `DB_PORT`         | нет         | `54339`      | хост-порт postgres в docker compose |
-| `PORT`, `NODE_ENV`| нет         | `3000`, —    | standalone-сервер web |
+### Make yourself an admin
 
-Тесты читают `.env.test` (база `props_test` на 54339, создаётся `docker/initdb/01-props-test.sql`).
-
-## Роли: как назначить ADMIN
-
-Роль хранится в `User.role` (`USER` | `ADMIN`), вход — подпись кошельком Solana (SIWS).
-Чтобы стать админом: положите адрес своего кошелька в `ADMIN_WALLET` и выполните сид
-(он идемпотентен, upsert):
+Roles live in `User.role` (`USER` or `ADMIN`). Put your wallet address into
+`ADMIN_WALLET` and run the seed again (it is an idempotent upsert):
 
 ```sh
-ADMIN_WALLET=<ваш-адрес> docker compose up migrate   # или локально:
-ADMIN_WALLET=<ваш-адрес> node --env-file=.env --import tsx prisma/seed.ts
+ADMIN_WALLET=<your-address> docker compose up migrate    # or locally:
+ADMIN_WALLET=<your-address> npm run seed
 ```
 
-После входа этим кошельком API админки (`/api/admin/*`) пустит по сессии с ролью ADMIN.
+After you sign in with that wallet, `/admin` and `/api/admin/*` are available.
 
-## Health и мониторинг воркера
+### Test payments on devnet
 
-`GET /api/health` проверяет только web+БД (`SELECT 1`) и возвращает версию; живость
-воркера он **не** проверяет — это осознанно (без новых таблиц под тики). Воркер жив, если:
+Build the web app with `NEXT_PUBLIC_SOLANA_CLUSTER=devnet`, set `TREASURY_WALLET`,
+`USDC_MINT` (devnet USDC) and `PAYMENTS_RPC_URL=https://api.devnet.solana.com`, and
+switch the wallet to Devnet. Market data still comes from Phoenix on mainnet.
+See [docs/DEMO.md](docs/DEMO.md) for a full demo setup with bots.
 
-1. `docker compose logs -f worker` — JSON-строки `{"ts":...,"level":"info","msg":"worker запущен"}`
-   и отсутствие повторяющихся `"level":"error"`; цикл внутри воркера сам ловит и логирует
-   ошибки итераций, а `restart: unless-stopped` перезапускает упавший процесс.
-2. Свежесть тиков можно проверить по данным: воркер пишет `EquitySnapshot` при переоценке
-   открытых позиций —
-   `SELECT max("timestamp") FROM "EquitySnapshot";` на активных счетах должен быть
-   не старше пары секунд. Пусто — нет открытых позиций, смотрите логи.
+## Commands
 
-## CI
+| Command             | What it does                                                   |
+|---------------------|----------------------------------------------------------------|
+| `npm run dev`       | Next.js dev server                                             |
+| `npm run worker`    | Worker: risk tick (1 s), day roll (30 s), payment checks       |
+| `npm run seed`      | Upsert challenge plans and prices, optional ADMIN user         |
+| `npm test`          | All `*.test.ts` with `node:test`, database from `.env.test`    |
+| `npm run typecheck` | `tsc --noEmit`                                                 |
+| `npm run build`     | Production build (standalone output)                           |
+| `npm start`         | Serve the production build                                     |
 
-`.github/workflows/ci.yml`: typecheck → тесты (postgres-service на 54339, база `props_test`,
-схему тесты пересоздают сами через `prisma db push --force-reset`) → `npm run build`.
+Tests use the `props_test` database on port 54339 (created by
+`docker/initdb/01-props-test.sql`) and recreate the schema themselves with
+`prisma db push --force-reset`.
 
-## Команды
+Helper scripts in `scripts/` (run with `npx tsx scripts/<name>.ts`):
+
+| Script            | Purpose                                                     |
+|-------------------|-------------------------------------------------------------|
+| `e2e.ts`          | End-to-end scenario against a running app                   |
+| `bot-load.ts`     | Load test: N bot accounts trading on recorded Phoenix prices |
+| `check-ledger.ts` | Ledger consistency check, expects zero violations           |
+| `record-prices.ts`| Record Phoenix prices for replay                            |
+| `devnet-real.ts`  | Real USDC payment on devnet, end to end                     |
+| `demo-shape.ts`   | Shape demo data (passed and funded accounts)                |
+| `manual-qa.ts`    | Automated checks against `BASE_URL` plus the manual QA checklist |
+| `natural-pass.ts` | Passes a Sprint challenge with real trades only, no manual adjustments |
+
+## Configuration
+
+Copy `.env.example` to `.env`. For production use `.env.production.example`, which documents every variable.
+
+| Variable                     | Required | Default | Purpose |
+|------------------------------|----------|---------|---------|
+| `DATABASE_URL`               | yes      | —       | PostgreSQL connection for web, worker, seed and tests |
+| `TREASURY_WALLET`            | for payments | —   | Wallet that receives USDC; without it checkout and payment checks are off |
+| `SOLANA_RPC_URL`             | no       | `https://api.mainnet-beta.solana.com` | Phoenix market data and payment checks |
+| `PAYMENTS_RPC_URL`           | no       | `SOLANA_RPC_URL` | RPC for payment confirmation only (devnet tests) |
+| `USDC_MINT`                  | no       | mainnet USDC | Mint accepted for payments |
+| `NEXT_PUBLIC_SOLANA_RPC_URL` | no       | —       | Wallet RPC in the browser (build time) |
+| `NEXT_PUBLIC_SOLANA_CLUSTER` | no       | `mainnet-beta` | Wallet cluster when no RPC is set (build time) |
+| `NEXT_PUBLIC_BRAND_NAME`, `NEXT_PUBLIC_SUPPORT_EMAIL` | no | — | Branding (build time) |
+| `TAKER_FEE_RATE`             | no       | `0.0005` | Simulated taker fee |
+| `ADMIN_WALLET`               | no       | —       | Seed creates an ADMIN user for this wallet |
+| `APP_DOMAINS`, `APP_DOMAIN`  | in production | — | Allowed hosts for SIWS (CSV) and the fallback domain |
+| `TRUSTED_IP_HEADER`, `TRUSTED_PROXY_COUNT` | no | —, `1` | How to read the client IP behind a proxy |
+| `BLOCKED_COUNTRIES`          | no       | `US,CU,IR,KP,SY,RU,BY` | Geo-block, ISO 3166 alpha-2 codes |
+| `DB_PORT`                    | no       | `54339` | Host port of PostgreSQL in Docker Compose |
+
+## Health check
+
+`GET /api/health` checks the database and the worker. The worker writes a heartbeat
+every 5 seconds; if the last risk tick is older than 30 s (or the last payment check
+older than 90 s while payments are on), the endpoint returns HTTP 503 with
+`"status":"degraded"`.
+
+```json
+{"status":"ok","db":"up","version":"2.0.0","worker":{"ok":true,"payments":"disabled","lastTickAgeMs":3232,"lastPaymentsCheckAgeMs":null}}
+```
+
+`GET /api/health?scope=web` checks only the database; it is meant for the web container's healthcheck.
+
+## Project structure
+
+```
+src/app/            pages (terminal, dashboard, checkout, funded, admin, ...) and /api routes
+src/lib/core/       money, positions, risk rules, Trader Score
+src/lib/execution/  simulated order execution, margin, leverage policy
+src/lib/marketData/ Phoenix market data: WebSocket stream, candles, order book
+src/lib/payments/   Solana Pay checkout and on-chain verification
+src/worker/         risk tick, day roll, payment checks, heartbeat
+prisma/             schema, migrations, seed
+scripts/            e2e, load, ledger and demo scripts
+deploy/             production stack: Caddy (HTTPS), backups, restore
+docs/               deploy guide, demo, QA, reviews (in Russian)
+```
+
+## Deployment
+
+A single Linux server with Docker: `deploy/docker-compose.prod.yml` adds Caddy with
+Let's Encrypt and daily `pg_dump` backups. Step-by-step guide, devnet → mainnet and
+security checklists: [docs/DEPLOY.md](docs/DEPLOY.md). Try the production stack
+locally with `deploy/local-check.sh`.
+
+CI (`.github/workflows/ci.yml`) runs typecheck, tests against PostgreSQL 17 and the build on every push.
+
+## Business model
+
+Traders pay a one-time challenge fee ($25–$899 depending on plan and size). Funded
+traders keep 80% of their profit; the firm keeps 20%. Payouts come from the public
+treasury, so the reserve is always visible.
+
+## Roadmap
+
+- Mainnet launch (the devnet → mainnet checklist is in [docs/DEPLOY.md](docs/DEPLOY.md)).
+- Automated USDC payouts signed by the treasury instead of manual admin transfers.
+- Publish rule hashes and daily account results on-chain, so anyone can audit pass/fail decisions.
+- More Phoenix markets and more plans.
+
+## Re-recording the demo GIF
+
+The terminal GIF is made with [VHS](https://github.com/charmbracelet/vhs):
 
 ```sh
-npm run dev        # dev-сервер
-npm run worker     # воркер (тик риска 1с, проверка смены дня 30с)
-npm test           # node:test + tsx, база props_test из .env.test
-npm run typecheck  # tsc --noEmit
-npm run build      # next build (standalone)
-npm run seed       # сид матрицы челленджей + опциональный ADMIN
+brew install vhs
+vhs docs/demo/commands.tape        # writes docs/demo/commands.gif
 ```
